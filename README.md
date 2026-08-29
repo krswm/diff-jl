@@ -9,6 +9,10 @@ I do not have knowledge about how it works though...
 - <https://github.com/juraam/stable-diffusion-from-scratch>
 - <https://magazine.sebastianraschka.com/p/ahead-of-ai-1-a-diffusion-of-innovations>
 - <https://github.com/Animadversio/DiffusionFromScratch>
+- <https://huggingface.co/blog/stable_diffusion>
+- <https://www.youtube.com/watch?v=ZBKpAp_6TGI>
+  - <https://github.com/hkproj/pytorch-stable-diffusion>
+  - <https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5>
 
 Is there an open weight parameters?
 
