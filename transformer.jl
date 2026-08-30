@@ -22,7 +22,6 @@ using Statistics
 
 using ..Model
 
-#=
 function layer_norm(
     x::Vector{Float32},
     g::Vector{Float32},
@@ -77,7 +76,6 @@ function feed_forward(x::Vector{Float32}, layer::Layer, model::Model)::Vector{Fl
     x = layer.w22 * x + layer.b22
     x
 end
-=#
 
 function tshow(x)
     show(IOContext(stdout, :limit => true), "text/plain", x)
@@ -93,9 +91,6 @@ function transformer!(
     v_caches::Vector{Vector{Matrix{Float32}}},
 )::Vector{Float32}
     x = model.wte[:, id+1] + model.wpe[:, pos]
-    x |> tshow
-    exit(0)  # bye bye
-    #=
     for (layer, k, v) ∈ zip(model.layers, k_caches, v_caches)
         y = layer_norm(x, layer.g1, layer.t1, model)
         y = multi_head_attention!(y, layer, k, v, pos, model)
@@ -106,7 +101,9 @@ function transformer!(
     end
     x = layer_norm(x, model.gf, model.tf, model)
     x = transpose(model.wte) * x
-    =#
+    x |> tshow
+    exit(0)
+    x
 end
 
 end

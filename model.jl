@@ -16,7 +16,7 @@
 
 module Model
 
-export Model, get_model
+export Model, get_model, Layer
 
 struct Layer
     g1::Vector{Float32}
@@ -34,12 +34,12 @@ struct Layer
 end
 
 struct Model
-    # n_ctx::Int
-    # n_embd::Int
-    # n_head::Int
-    # n_layer::Int
-    # vocab_size::Int
-    # e::Float32
+     n_ctx::Int
+     n_embd::Int
+     n_head::Int
+     n_layer::Int
+     vocab_size::Int
+     e::Float32
     wte::Matrix{Float32}
     wpe::Matrix{Float32}
     layers::Array{Layer}
@@ -67,6 +67,7 @@ function get_model(tensors::Dict{String,Array})::Model
     vocab_size = 49408
     n_ctx = 77  # Quite short compared to GPT-2's (1024)!
     n_head = 12
+    e = 1.0f-5
 
     # Regarding a product between a matrix and a vector,
     # it feels more natural for me to perform:
@@ -93,7 +94,6 @@ function get_model(tensors::Dict{String,Array})::Model
     validate_size(wpe, (n_embd, n_ctx))
     layers = Layer[]
     for i = 0:(n_layer-1)
-        println("E")
         g1 = tensors["$prefix.encoder.layers.$i.layer_norm1.weight"]
         validate_size(g1, (n_embd,))
         t1 = tensors["$prefix.encoder.layers.$i.layer_norm1.bias"]
@@ -110,7 +110,6 @@ function get_model(tensors::Dict{String,Array})::Model
             tensors["$prefix.encoder.layers.$i.self_attn.k_proj.bias"],
             tensors["$prefix.encoder.layers.$i.self_attn.v_proj.bias"],
         ) |> vec
-        b11 |> size |> println
         validate_size(b11, (n_embd * 3,))
         w12 = permutedims(tensors["$prefix.encoder.layers.$i.self_attn.out_proj.weight"])
         validate_size(w12, (n_embd, n_embd))
@@ -133,20 +132,21 @@ function get_model(tensors::Dict{String,Array})::Model
         validate_size(w22, (n_embd, n_embd * 4))
         b22 = tensors["$prefix.encoder.layers.$i.mlp.fc2.bias"]
         validate_size(b22, (n_embd,))
-        println("A")
         layer = Layer(g1, t1, w11, b11, w12, b12, g2, t2, w21, b21, w22, b22)
-        println("C")
         push!(layers, layer)
-        println("D")
     end
-    println("B")
     gf = tensors["$prefix.final_layer_norm.weight"]
     validate_size(gf, (n_embd,))
     tf = tensors["$prefix.final_layer_norm.bias"]
     validate_size(tf, (n_embd,))
 
-    println("C")
-    Model(wte, wpe, layers, gf, tf)
+    Model(
+     n_ctx,
+     n_embd,
+     n_head,
+     n_layer,
+     vocab_size,
+     e, wte, wpe, layers, gf, tf)
 end
 
 end
