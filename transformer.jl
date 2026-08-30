@@ -100,7 +100,7 @@ function transformer!(
         x += y
     end
     x = layer_norm(x, model.gf, model.tf, model)
-    x = transpose(model.wte) * x
+    # x = transpose(model.wte) * x  # Oh, I don't need logits now
     x |> tshow
     exit(0)
     x

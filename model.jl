@@ -99,10 +99,11 @@ function get_model(tensors::Dict{String,Array})::Model
         t1 = tensors["$prefix.encoder.layers.$i.layer_norm1.bias"]
         validate_size(t1, (n_embd,))
         # Unlike GPT-2, q, k, and v are splitted in the CLIP Safetensors model file!
+        # It seems I don't need permutedims here either.
         w11 = vcat(
-            permutedims(tensors["$prefix.encoder.layers.$i.self_attn.q_proj.weight"]),
-            permutedims(tensors["$prefix.encoder.layers.$i.self_attn.k_proj.weight"]),
-            permutedims(tensors["$prefix.encoder.layers.$i.self_attn.v_proj.weight"]),
+            tensors["$prefix.encoder.layers.$i.self_attn.q_proj.weight"],
+            tensors["$prefix.encoder.layers.$i.self_attn.k_proj.weight"],
+            tensors["$prefix.encoder.layers.$i.self_attn.v_proj.weight"],
         )
         validate_size(w11, (n_embd * 3, n_embd))
         b11 = vcat(
@@ -111,7 +112,7 @@ function get_model(tensors::Dict{String,Array})::Model
             tensors["$prefix.encoder.layers.$i.self_attn.v_proj.bias"],
         ) |> vec
         validate_size(b11, (n_embd * 3,))
-        w12 = permutedims(tensors["$prefix.encoder.layers.$i.self_attn.out_proj.weight"])
+        w12 = tensors["$prefix.encoder.layers.$i.self_attn.out_proj.weight"]
         validate_size(w12, (n_embd, n_embd))
         b12 = tensors["$prefix.encoder.layers.$i.self_attn.out_proj.bias"]
         validate_size(b12, (n_embd,))
@@ -134,6 +135,7 @@ function get_model(tensors::Dict{String,Array})::Model
         validate_size(b22, (n_embd,))
         layer = Layer(g1, t1, w11, b11, w12, b12, g2, t2, w21, b21, w22, b22)
         push!(layers, layer)
+        # It turns out I only need `permutedims` for input embedding tensors...
     end
     gf = tensors["$prefix.final_layer_norm.weight"]
     validate_size(gf, (n_embd,))
