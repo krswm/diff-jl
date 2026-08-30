@@ -62,7 +62,8 @@ function main()::Matrix{Float32}
 
     model = begin
         tensors = load_safetensors("$(ARGS[1])/model.safetensors")
-        get_model(tensors)
+        config = JSON.parsefile("$(ARGS[1])/config.json")
+        get_model(tensors, config)
     end
 
     # ==== Tokenization ====
@@ -84,6 +85,8 @@ function main()::Matrix{Float32}
     for (pos, id) ∈ enumerate(ids)
         x = hcat(x, transformer!(id, pos, model, k_caches, v_caches))
     end
+    show(IOContext(stdout, :limit => true), "text/plain", x)
+    println()
     x
 end
 

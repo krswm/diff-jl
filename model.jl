@@ -16,7 +16,9 @@
 
 module Model
 
-export Model, get_model, Layer
+export Layer, Model, get_model
+
+using JSON
 
 struct Layer
     g1::Vector{Float32}
@@ -34,12 +36,12 @@ struct Layer
 end
 
 struct Model
-     n_ctx::Int
-     n_embd::Int
-     n_head::Int
-     n_layer::Int
-     vocab_size::Int
-     e::Float32
+    n_ctx::Int
+    n_embd::Int
+    n_head::Int
+    n_layer::Int
+    vocab_size::Int
+    e::Float32
     wte::Matrix{Float32}
     wpe::Matrix{Float32}
     layers::Array{Layer}
@@ -53,40 +55,14 @@ function validate_size(tensor, expected)
     end
 end
 
-function get_model(tensors::Dict{String,Array})::Model
-    #=
-    n_ctx = config["n_ctx"]
-    n_embd = config["n_embd"]
-    n_head = config["n_head"]
-    n_layer = config["n_layer"]
+function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
+    n_ctx = config["max_position_embeddings"]
+    n_embd = config["hidden_size"]
+    n_head = config["num_attention_heads"]
+    n_layer = config["num_hidden_layers"]
     vocab_size = config["vocab_size"]
-    e = Float32(config["layer_norm_epsilon"])
-    =#
-    n_layer = 12
-    n_embd = 768
-    vocab_size = 49408
-    n_ctx = 77  # Quite short compared to GPT-2's (1024)!
-    n_head = 12
-    e = 1.0f-5
+    e = Float32(config["layer_norm_eps"])
 
-    # Regarding a product between a matrix and a vector,
-    # it feels more natural for me to perform:
-    #               ┏━━━┓
-    # ┏━━━┯━━━┯━━━┓ ┃ a ┃   ┏━━━━━━━━━━┓
-    # ┃ d │ f │ h ┃ ┠───┨   ┃ ad+bf+ch ┃
-    # ┠───┼───┼───┨ ┃ b ┃ → ┠──────────┨
-    # ┃ e │ g │ i ┃ ┠───┨   ┃ ae+bg+ci ┃
-    # ┗━━━┷━━━┷━━━┛ ┃ c ┃   ┗━━━━━━━━━━┛
-    #               ┗━━━┛
-    # than to perform:
-    #               ┏━━━┯━━━┓
-    #               ┃ d │ e ┃
-    # ┏━━━┯━━━┯━━━┓ ┠───┼───┨   ┏━━━━━━━━━━┯━━━━━━━━━━┓
-    # ┃ a │ b │ c ┃ ┃ f │ g ┃ → ┃ ab+bf+ch │ ae+bg+ci ┃
-    # ┗━━━┷━━━┷━━━┛ ┠───┼───┨   ┗━━━━━━━━━━┷━━━━━━━━━━┛
-    #               ┃ h │ i ┃
-    #               ┗━━━┷━━━┛
-    # Therefore, I apply `permutedims` to 2D tensors here.
     prefix = "cond_stage_model.transformer.text_model"
     wte = permutedims(tensors["$prefix.embeddings.token_embedding.weight"])
     validate_size(wte, (n_embd, vocab_size))
