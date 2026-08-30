@@ -103,27 +103,15 @@ function tokenize(
     token_to_id::Dict{String,Int},
     ranks::Dict{Tuple{String,String},Int},
     input::String,
+    fill_size::Int
 )::Array{Int}
-    # Split `input` by "\n" and " " and get `raw_tokens`.
-    # "\n" is a `raw_token` by itself.
-    # " " is attached to the next word.
-    raw_tokens = String[]
-    for (i_line, line) ∈ enumerate(split(input, "\n"))
-        if i_line ≥ 2
-            push!(raw_tokens, "\n")
-        end
-
-        for (i_word, word) ∈ enumerate(split(line, " "))
-            if i_word == 1 && word ≠ ""
-                push!(raw_tokens, word)
-            elseif i_word ≥ 2
-                push!(raw_tokens, " $word")
-            end
-        end
-    end
+    raw_tokens = split(input)
+    raw_tokens = raw_tokens .* "</w>"  # End of word
     raw_tokens = encode_unique_encoding.(raw_tokens)
 
-    ids = Int[]  # Token IDs
+    startoftext_id = token_to_id["<|startoftext|>"]
+    endoftext_id = token_to_id["<|endoftext|>"]
+    ids = Int[startoftext_id]  # Token IDs
     for raw_token ∈ raw_tokens
         if haskey(token_to_id, raw_token)
             # `raw_token` is already a valid token.
@@ -154,6 +142,9 @@ function tokenize(
                 push!(ids, token_to_id[token])
             end
         end
+    end
+    for _ = length(ids):fill_size
+        push!(ids, endoftext_id)
     end
     ids
 end
@@ -204,7 +195,7 @@ function main()::Nothing
     # ==== Tokenization ====
 
     # Token IDs
-    ids = tokenize(token_to_id, ranks, ARGS[2])
+    ids = tokenize(token_to_id, ranks, ARGS[2], 77)
     if length(ids) == 0
         println("Your prompt should not be empty.")
         exit()
@@ -219,3 +210,11 @@ main()
 # Things that's different from GPT-2 I noticed:
 # - The `<|startoftext|>` and the `<|endoftext|>` tokens
 # - `</w>` stuff (Maybe end of word? It resembles HTML and XML end markers.)
+
+# What if the prompt includes "\n"?
+# -> If I test Hugging Face's `tokenizer.batch_encode_plus` (Python)
+#    I observed it removes such bytes.
+#    e.g. -> "A\nB" and "A B" are the same
+# Julia's `split` will work.
+
+# Completed!
