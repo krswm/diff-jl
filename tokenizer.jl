@@ -143,7 +143,7 @@ function tokenize(
             end
         end
     end
-    for _ = length(ids):fill_size
+    for _ = (length(ids) + 1):fill_size
         push!(ids, endoftext_id)
     end
     ids
@@ -159,6 +159,11 @@ using .Model
 using .Tokenizer
 include("transformer.jl")
 using .Transformer
+
+function tshow(x)
+    show(IOContext(stdout, :limit => true), "text/plain", x)
+    println()
+end
 
 # Originally taken from my GPT-2 inference implementation.
 function main()::Nothing
@@ -204,11 +209,8 @@ function main()::Nothing
     # ==== Tokenization ====
 
     # Token IDs
-    ids = tokenize(token_to_id, ranks, ARGS[3], 77)
-    if length(ids) == 0
-        println("Your prompt should not be empty.")
-        exit()
-    end
+    ids = tokenize(token_to_id, ranks, ARGS[3], model.n_ctx)
+    ids |> length |> println
 
     # ==== Inference ====
 
@@ -225,9 +227,16 @@ function main()::Nothing
     # This time the transformer will used not for text generation.
     # I'll use it just for the prompt embedding.
     # (Can I use it for text generation, technically?)
+    prompt_embedding = Matrix{Float32}(undef, model.n_embd, 0)
     for (pos, id) in enumerate(ids)
-        logits = transformer!(id, pos, model, k_caches, v_caches)
+         prompt_embedding = hcat(
+            prompt_embedding,
+            transformer!(id, pos, model, k_caches, v_caches),
+        )
     end
+   prompt_embedding |> tshow
+
+   # Prompt embedding finished!
 end
 
 main()
