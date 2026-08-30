@@ -1,64 +1,101 @@
-# Encoder
+# GPT-2 inference with Julia
+# Copyright (C) 2026  Kurosawa Mutsumi
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# Is there `nn.Conv2d` equivalent in Julia?
-# `conv2`? `UndefVarError` happens for me??
-# No longer existing in base Julia?
-# DSP.jl?
-using DSP
+using JSON
+using SafeTensors
 
-# `GroupNorm` in Julia?
-# Do I have to write it myself?
-# Looking at the formula, GroupNorm looks similar to LayerNorm.
-# What is different?
+include("model.jl")
+using .Model
+include("tokenizer.jl")
+using .Tokenizer
+include("transformer.jl")
+using .Transformer
 
-# `SiLU`?
-σ(x) = 1 / (exp(-x) + 1)  # Fermi distribution flipped
-silu(x) = x * σ(x)
-# using Plots
-# plot(silu) |> display
-# readline()
-
-# Decoder
-
-# `nn.Upsample`? The default is `mode='nearest'`.
-# Flux.jl?
-
-# Attention
-
-# Taken from my GPT-2 transformer implementation
-# Numerically stable softmax
-function softmax(x::Vector{Float32})::Vector{Float32}
-    x = exp.(x .- maximum(x))
-    x / sum(x, dims = 2)
+function tshow(x)
+    show(IOContext(stdout, :limit => true), "text/plain", x)
+    println()
 end
 
-# Taken from my GPT-2 transformer implementation
-# This time I can't use KV-cache. (Maybe I can but not now.)
-function multi_head_attention!(
-    x::Matrix{Float32},
-    n_head::Int,
-    n_embd::Int,
-    use_causal_mask::Bool,
-)::Vector{Float32}
-    # x = layer.w11 * x + layer.b11  # What is `nn.Linear`?
-    chunks = Iterators.partition.(
-        Iterators.partition(x, model.n_embd),
-        model.n_embd ÷ model.n_head,
-    )
-    size_embd = model.n_embd ÷ model.n_head
-    q = x[(0*size_embd):(1*size_embd), :]
-    k = x[(1*size_embd):(2*size_embd), :]
-    v = x[(2*size_embd):(3*size_embd), :]
-    # Scaled dot-product attention
-    a =
-        v .* softmax.(
-            transpose.(k) .* q ./ √Float32(size_embd) +
-            triu(fill(-Inf, (size_embd, size_embd)), 1),
+# Originally taken from my GPT-2 inference implementation.
+function main()::Nothing
+    if length(ARGS) ≠ 3
+        println("GPT-2 Inference with Julia")
+        print("Usage: ")
+        printstyled(
+            "julia --project $PROGRAM_FILE <path to model repository> <path to model safetensors> <your prompt>",
+            bold = true,
         )
-    x = vcat(a...)
-    # x = layer.w12 * x + layer.b12
-    x
+        println()
+        println("You may have to enclose 'your prompt' with quotes.")
+        exit()
+    end
+
+    token_to_id, id_to_token = begin
+        vocab = JSON.parsefile("$(ARGS[1])/vocab.json")
+        token_to_id = Dict(token => id for (token, id) ∈ vocab)
+        id_to_token = Dict(id => token for (token, id) ∈ vocab)
+        token_to_id, id_to_token
+    end
+
+    ranks = begin
+        ranks = Dict{Tuple{String,String},Int}()
+        rank = 0
+        for line ∈ readlines("$(ARGS[1])/merges.txt")
+            # Skip a comment line.
+            if startswith(line, "#")
+                continue
+            end
+
+            token0, token1 = split(line, " ")
+            ranks[(token0, token1)] = rank
+            rank += 1
+        end
+        ranks
+    end
+
+    tensors = load_safetensors(ARGS[2])
+
+    model = get_model(tensors)
+
+    # ==== Tokenization ====
+
+    # Token IDs
+    ids = tokenize(token_to_id, ranks, ARGS[3], model.n_ctx)
+    ids |> length |> println
+
+    # ==== Inference ====
+
+    id = 0
+    k_caches = [
+        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
+        for _ = 1:model.n_layer
+    ]
+    v_caches = [
+        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
+        for _ = 1:model.n_layer
+    ]
+
+    prompt_embedding = Matrix{Float32}(undef, model.n_embd, 0)
+    for (pos, id) in enumerate(ids)
+         prompt_embedding = hcat(
+            prompt_embedding,
+            transformer!(id, pos, model, k_caches, v_caches),
+        )
+    end
+   prompt_embedding |> tshow
 end
 
-# CLIP
-# Is this different from transformer of LLM?
+main()
