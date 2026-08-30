@@ -206,6 +206,7 @@ function main()::Nothing
     =#
 
     model = get_model(tensors)
+    exit(0)
 
     # ==== Tokenization ====
 

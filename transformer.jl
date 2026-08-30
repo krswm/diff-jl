@@ -63,11 +63,17 @@ function multi_head_attention!(
     x
 end
 
+sigmoid(x) = 1.0f0 / (exp(-x) + 1.0f0)
+
 function feed_forward(x::Vector{Float32}, layer::Layer, model::Model)::Vector{Float32}
     x = layer.w21 * x + layer.b21
+    #=
     # This formula is based on the paper that introduced GELU.
     # https://arxiv.org/abs/1606.08415
     x = (tanh.((x .^ 3 * 0.044715f0 + x) * √(2.0f0 / π)) .+ 1.0f0) .* x * 0.5f0
+    =#
+    # QuickGELU
+    x = x .* sigmoid.(1.702 * x)
     x = layer.w22 * x + layer.b22
     x
 end
