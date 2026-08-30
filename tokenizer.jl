@@ -196,6 +196,12 @@ function main()::Nothing
     end
 
     tensors = load_safetensors(ARGS[2])
+    tensors |> summary |> println
+    #=
+    for key in keys(tensors)
+        key |> println
+    end
+    =#
 
     # ==== Tokenization ====
 
@@ -209,19 +215,22 @@ function main()::Nothing
     # ==== Inference ====
 
     id = 0
+    n_embd = 1
+    n_head = 1
+    n_layer = 1
     k_caches = [
-        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
-        for _ = 1:model.n_layer
+        [Matrix{Float32}(undef, n_embd ÷ n_head, 0) for _ = 1:n_head]
+        for _ = 1:n_layer
     ]
     v_caches = [
-        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
-        for _ = 1:model.n_layer
+        [Matrix{Float32}(undef, n_embd ÷ n_head, 0) for _ = 1:n_head]
+        for _ = 1:n_layer
     ]
 
     # This time the transformer will used not for text generation.
     # I'll use it just for the prompt embedding.
     # (Can I use it for text generation, technically?)
-    for (pos, id) ∈ enumerate(ids)
+    for (pos, id) in enumerate(ids)
         logits = transformer!(id, pos, tensors, k_caches, v_caches)
     end
 end

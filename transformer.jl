@@ -20,8 +20,7 @@ export transformer!
 
 using Statistics
 
-using ..Model
-
+#=
 function layer_norm(
     x::Vector{Float32},
     g::Vector{Float32},
@@ -70,17 +69,28 @@ function feed_forward(x::Vector{Float32}, layer::Layer, model::Model)::Vector{Fl
     x = layer.w22 * x + layer.b22
     x
 end
+=#
+
+function tshow(x)
+    show(IOContext(stdout, :limit => true), "text/plain", x)
+    println()
+end
 
 # The transformer of the GPT-2 architecture.
 function transformer!(
     id::Int,
     pos::Int,
-    model::Model,
+    tensors::Dict{String,Array},
     k_caches::Vector{Vector{Matrix{Float32}}},
     v_caches::Vector{Vector{Matrix{Float32}}},
 )::Vector{Float32}
-    # ids are 0-based. Julia is 1-based.
-    x = model.wte[:, id+1] + model.wpe[:, pos]
+    x = (
+        permutedims(tensors["cond_stage_model.transformer.text_model.embeddings.token_embedding.weight"])[:, id+1]
+        + permutedims(tensors["cond_stage_model.transformer.text_model.embeddings.position_embedding.weight"])[:, pos]
+    )
+    x |> tshow
+    exit(0)  # bye bye
+    #=
     for (layer, k, v) ∈ zip(model.layers, k_caches, v_caches)
         y = layer_norm(x, layer.g1, layer.t1, model)
         y = multi_head_attention!(y, layer, k, v, pos, model)
@@ -91,7 +101,7 @@ function transformer!(
     end
     x = layer_norm(x, model.gf, model.tf, model)
     x = transpose(model.wte) * x
-    x
+    =#
 end
 
 end
