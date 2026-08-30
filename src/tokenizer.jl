@@ -14,7 +14,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# Originally taken from my GPT-2 tokenizer implementation.
 module Tokenizer
 
 export decode_unique_encoding!, tokenize
@@ -39,63 +38,6 @@ function encode_unique_encoding(text::String)::String
         end for byte ∈ transcode(UInt8, text)
     ]
     transcode(String, encoded)
-end
-
-function decode_unique_encoding!(encoded::String, buffer::Array{UInt8})::String
-    bytes = [
-        if codepoint ∈ 0x0100:0x0120
-            UInt8(codepoint - 0x0100)
-        elseif codepoint ∈ 0x0021:0x007E
-            UInt8(codepoint)
-        elseif codepoint ∈ 0x0121:0x0142
-            UInt8(codepoint - 0x00A2)
-        elseif codepoint ∈ 0x00A1:0x00AC
-            UInt8(codepoint)
-        elseif codepoint == 0x0143
-            0xAD
-        elseif codepoint ∈ 0x00AE:0x00FF
-            UInt8(codepoint)
-        end for codepoint ∈ transcode(UInt32, encoded)
-    ]
-    bytes = vcat(buffer, bytes)
-    empty!(buffer)
-
-    # A token may contain only a part of UTF-8 sequence.
-    # Decode it incrementally.
-
-    # Unfinished valid UTF-8 sequences:
-    #
-    # Case A1: 110xxxxx
-    #
-    # Case B1: 1110xxxx
-    # Case B2: 1110xxxx 10xxxxxx
-    #
-    # Case C1: 11110xxx
-    # Case C2: 11110xxx 10xxxxxx
-    # Case C3: 11110xxx 10xxxxxx 10xxxxxx
-
-    if length(bytes) ≥ 3 &&
-       bytes[end-2] ∈ 0xC0:0xDF &&
-       bytes[end-1] ∈ 0x80:0xBF &&
-       bytes[end] ∈ 0x80:0xBF
-        # Case C3
-        decoded = bytes[1:(end-3)]
-        append!(buffer, bytes[(end-2):end])
-    elseif length(bytes) ≥ 2 && bytes[end-1] ∈ 0xC0:0xEF && bytes[end] ∈ 0x80:0xBF
-        # Case B2 and Case C2
-        decoded = bytes[1:(end-2)]
-        append!(buffer, bytes[(end-1):end])
-    elseif length(bytes) ≥ 1 && bytes[end] ∈ 0xC0:0xF7
-        # Case A1, Case B1, and Case C1
-        decoded = bytes[1:(end-1)]
-        append!(buffer, bytes[end:end])
-    else
-        # No unfinished sequence at the end
-        decoded = bytes
-    end
-
-    decoded = transcode(String, decoded)
-    join((valid ? char : '�') for (char, valid) ∈ zip(decoded, isvalid.(collect(decoded))))
 end
 
 # Tokenize `input` with the BPE algorithm.
@@ -147,6 +89,8 @@ function tokenize(
         push!(ids, endoftext_id)
     end
     ids
+    ids |> println
+    exit(0)
 end
 
 end
