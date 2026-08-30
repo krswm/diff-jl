@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+# Originally taken from my GPT-2 tokenizer implementation.
 module Tokenizer
 
 export decode_unique_encoding!, tokenize
@@ -158,3 +159,63 @@ function tokenize(
 end
 
 end
+
+using JSON
+
+using .Tokenizer
+
+# Originally taken from my GPT-2 inference implementation.
+function main()::Nothing
+    if length(ARGS) ≠ 2
+        println("GPT-2 Inference with Julia")
+        print("Usage: ")
+        printstyled(
+            "julia --project $PROGRAM_FILE <path to model repository> <your prompt>",
+            bold = true,
+        )
+        println()
+        println("You may have to enclose 'your prompt' with quotes.")
+        exit()
+    end
+
+    token_to_id, id_to_token = begin
+        vocab = JSON.parsefile("$(ARGS[1])/vocab.json")
+        token_to_id = Dict(token => id for (token, id) ∈ vocab)
+        id_to_token = Dict(id => token for (token, id) ∈ vocab)
+        token_to_id, id_to_token
+    end
+
+    ranks = begin
+        ranks = Dict{Tuple{String,String},Int}()
+        rank = 0
+        for line ∈ readlines("$(ARGS[1])/merges.txt")
+            # Skip a comment line.
+            if startswith(line, "#")
+                continue
+            end
+
+            token0, token1 = split(line, " ")
+            ranks[(token0, token1)] = rank
+            rank += 1
+        end
+        ranks
+    end
+
+    # ==== Tokenization ====
+
+    # Token IDs
+    ids = tokenize(token_to_id, ranks, ARGS[2])
+    if length(ids) == 0
+        println("Your prompt should not be empty.")
+        exit()
+    end
+
+    println(ids)
+end
+
+main()
+
+# Apparently it doesn't work without changing anything.
+# Things that's different from GPT-2 I noticed:
+# - The `<|startoftext|>` and the `<|endoftext|>` tokens
+# - `</w>` stuff (Maybe end of word? It resembles HTML and XML end markers.)
