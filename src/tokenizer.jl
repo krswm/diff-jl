@@ -51,7 +51,7 @@ function tokenize(
     raw_tokens = string.(split(lowercase(input)))
     raw_tokens = encode_unique_encoding.(raw_tokens)
     ids = Int[]
-    push!(ids, token_to_id["<|startoftext|>"])  # Token IDs
+    push!(ids, token_to_id["<|startoftext|>"])
     for raw_token ∈ raw_tokens
         if haskey(token_to_id, raw_token * "</w>")
             # `raw_token` is already a valid token.
@@ -84,7 +84,9 @@ function tokenize(
             end
         end
     end
-    push!(ids, (token_to_id["<|endoftext|>"] for _ = (length(ids)+1):model.n_ctx)...)
+    push!(ids, (token_to_id["<|endoftext|>"] for _ = (length(ids)+1):(model.n_ctx-1))...)
+    resize!(ids, model.n_ctx - 1)
+    push!(ids, token_to_id["<|endoftext|>"])
     ids
 end
 
