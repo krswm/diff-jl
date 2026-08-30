@@ -16,11 +16,12 @@
 
 module Tokenizer
 
-export decode_unique_encoding!, tokenize
+export tokenize
 
-# GPT-2 has a unique encoding.
-# e.g.: 'Ġ' (U+0120) → 0x20
+using ..Model
 
+# CLIP has a unique encoding.
+# e.g.: 'à' (U+00E0) is encoded as "Ãł" (U+00C3 0+0142)
 function encode_unique_encoding(text::String)::String
     encoded = [
         if byte ∈ 0x00:0x20
@@ -40,53 +41,21 @@ function encode_unique_encoding(text::String)::String
     transcode(String, encoded)
 end
 
-# U+00C0 (C3 80) -> U+00E0 U+00AF
-
-# Hmm, CLIP also has "unique encoding"
-# but it's not identical to GPT-2's.
-# Let me reverse-engineer Hugging Face's tokenizer! 
-# (I won't see the source code of HF's tokenizer. It's my challege for myself!)
-# ...
-# Nevermind, they are actually identical. It is my mistake :(
-# There's a bug on MY code.
-# ...
-# Well, actually they ARE different.
-# It uses U+00A1-U+0143, which is the same range GPT-2 uses
-# but CLIP seems to have a different mapping.
-# ...
-# It turns out U+00C0 is coincidentally somewhat a rara case
-# because it supposed to use U+00A0 for the second UTF-8 byte (0x80)
-# but U+00A0 is nbsp and it's avoided (maybe because it's invisible, I guess)
-# so it uses U+0142 instead.
-# ...
-# Wait wait wait, Capital letters are converted to small letters!?
-# I haven't realized that because I've used "cat with hat"
-# as the debug test prompt!
-# This explains everything.
-# U+00C0 is À and its lower case counterpart is à.
-# "à" encoded with my GPT-2 tokenizer implementation is indeed "\ue0\uef".
-# à la carte?
-# The conclusion is that CLIP's unique encoding is same as GPT-2 under the hood
-# the only difference is for CLiP the text is turned lowercase beforehand.
-
 # Tokenize `input` with the BPE algorithm.
 function tokenize(
     token_to_id::Dict{String,Int},
     ranks::Dict{Tuple{String,String},Int},
+    model::Model,
     input::String,
-    fill_size::Int
 )::Array{Int}
-    input = lowercase(input)
-    raw_tokens = String.(split(input))
+    raw_tokens = string.(split(lowercase(input)))
     raw_tokens = encode_unique_encoding.(raw_tokens)
-
-    startoftext_id = token_to_id["<|startoftext|>"]
-    endoftext_id = token_to_id["<|endoftext|>"]
-    ids = Int[startoftext_id]  # Token IDs
+    ids = Int[]
+    push!(ids, token_to_id["<|startoftext|>"])  # Token IDs
     for raw_token ∈ raw_tokens
         if haskey(token_to_id, raw_token * "</w>")
             # `raw_token` is already a valid token.
-            push!(ids, token_to_id[raw_token * "</w>"])
+            push!(ids, token_to_id[raw_token*"</w>"])
         else
             # `raw_token` is not a valid token.
             # Split `raw_token` and get valid tokens with the merge algorithm.
@@ -115,12 +84,8 @@ function tokenize(
             end
         end
     end
-    for _ = (length(ids) + 1):fill_size
-        push!(ids, endoftext_id)
-    end
+    push!(ids, (token_to_id["<|endoftext|>"] for _ = (length(ids)+1):model.n_ctx)...)
     ids
-    ids |> println
-    exit(0)
 end
 
 end

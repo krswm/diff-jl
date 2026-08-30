@@ -69,7 +69,7 @@ function main()::Matrix{Float32}
     # ==== Tokenization ====
 
     # Token IDs
-    ids = tokenize(token_to_id, ranks, ARGS[2], model.n_ctx)
+    ids = tokenize(token_to_id, ranks, model, ARGS[2])
 
     # ==== Inference ====
 
