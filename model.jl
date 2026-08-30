@@ -74,8 +74,6 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         validate_size(g1, (n_embd,))
         t1 = tensors["$prefix.encoder.layers.$i.layer_norm1.bias"]
         validate_size(t1, (n_embd,))
-        # Unlike GPT-2, q, k, and v are splitted in the CLIP Safetensors model file!
-        # It seems I don't need permutedims here either.
         w11 = vcat(
             tensors["$prefix.encoder.layers.$i.self_attn.q_proj.weight"],
             tensors["$prefix.encoder.layers.$i.self_attn.k_proj.weight"],
@@ -86,7 +84,7 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
             tensors["$prefix.encoder.layers.$i.self_attn.q_proj.bias"],
             tensors["$prefix.encoder.layers.$i.self_attn.k_proj.bias"],
             tensors["$prefix.encoder.layers.$i.self_attn.v_proj.bias"],
-        ) |> vec
+        )
         validate_size(b11, (n_embd * 3,))
         w12 = tensors["$prefix.encoder.layers.$i.self_attn.out_proj.weight"]
         validate_size(w12, (n_embd, n_embd))
@@ -96,35 +94,23 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         validate_size(g2, (n_embd,))
         t2 = tensors["$prefix.encoder.layers.$i.layer_norm2.bias"]
         validate_size(t2, (n_embd,))
-        # w21 = permutedims(tensors["$prefix.encoder.layers.$i.mlp.fc1.weight"])
-        # validate_size(w21, (n_embd * 4, n_embd))  # It's actually (n_embd, n_embd * 4)???
-        # Do I *not* have to `permutedims`?
         w21 = tensors["$prefix.encoder.layers.$i.mlp.fc1.weight"]
         validate_size(w21, (n_embd * 4, n_embd))
         b21 = tensors["$prefix.encoder.layers.$i.mlp.fc1.bias"]
         validate_size(b21, (n_embd * 4,))
-        # w22 = permutedims(tensors["$prefix.encoder.layers.$i.mlp.fc2.weight"])
-        # validate_size(w22, (n_embd, n_embd * 4))  # Ditto here, it's actually (n_embd * 4, n_embd)
         w22 = tensors["$prefix.encoder.layers.$i.mlp.fc2.weight"]
         validate_size(w22, (n_embd, n_embd * 4))
         b22 = tensors["$prefix.encoder.layers.$i.mlp.fc2.bias"]
         validate_size(b22, (n_embd,))
         layer = Layer(g1, t1, w11, b11, w12, b12, g2, t2, w21, b21, w22, b22)
         push!(layers, layer)
-        # It turns out I only need `permutedims` for input embedding tensors...
     end
     gf = tensors["$prefix.final_layer_norm.weight"]
     validate_size(gf, (n_embd,))
     tf = tensors["$prefix.final_layer_norm.bias"]
     validate_size(tf, (n_embd,))
 
-    Model(
-     n_ctx,
-     n_embd,
-     n_head,
-     n_layer,
-     vocab_size,
-     e, wte, wpe, layers, gf, tf)
+    Model(n_ctx, n_embd, n_head, n_layer, vocab_size, e, wte, wpe, layers, gf, tf)
 end
 
 end
