@@ -20,6 +20,9 @@ silu(x) = x * σ(x)
 
 # Decoder
 
+# `nn.Upsample`? The default is `mode='nearest'`.
+# Flux.jl?
+
 # Attention
 
 # Taken from my GPT-2 transformer implementation
@@ -56,3 +59,6 @@ function multi_head_attention!(
     # x = layer.w12 * x + layer.b12
     x
 end
+
+# CLIP
+# Is this different from transformer of LLM?
