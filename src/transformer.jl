@@ -62,27 +62,14 @@ function multi_head_attention!(
     x
 end
 
-sigmoid(x) = 1.0f0 / (exp(-x) + 1.0f0)
-
 function feed_forward(x::Vector{Float32}, layer::Layer, model::Model)::Vector{Float32}
     x = layer.w21 * x + layer.b21
-    #=
-    # This formula is based on the paper that introduced GELU.
-    # https://arxiv.org/abs/1606.08415
-    x = (tanh.((x .^ 3 * 0.044715f0 + x) * √(2.0f0 / π)) .+ 1.0f0) .* x * 0.5f0
-    =#
-    # QuickGELU
-    x = x .* sigmoid.(1.702 * x)
+    x = x ./ (exp.(x * -1.702f0) .+ 1.0f0)  # Quick GELU
     x = layer.w22 * x + layer.b22
     x
 end
 
-function tshow(x)
-    show(IOContext(stdout, :limit => true), "text/plain", x)
-    println()
-end
-
-# The transformer of the GPT-2 architecture.
+# The transformer for CLIP.
 function transformer!(
     id::Int,
     pos::Int,
@@ -90,6 +77,7 @@ function transformer!(
     k_caches::Vector{Vector{Matrix{Float32}}},
     v_caches::Vector{Vector{Matrix{Float32}}},
 )::Vector{Float32}
+    # `id` is 0-based. Julia is 1-based.
     x = model.wte[:, id+1] + model.wpe[:, pos]
     for (layer, k, v) ∈ zip(model.layers, k_caches, v_caches)
         y = layer_norm(x, layer.g1, layer.t1, model)
@@ -100,7 +88,6 @@ function transformer!(
         x += y
     end
     x = layer_norm(x, model.gf, model.tf, model)
-    # x = transpose(model.wte) * x  # Oh, I don't need logits now
     x
 end
 
