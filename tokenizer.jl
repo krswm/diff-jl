@@ -154,6 +154,8 @@ end
 using JSON
 using SafeTensors
 
+include("model.jl")
+using .Model
 using .Tokenizer
 include("transformer.jl")
 using .Transformer
@@ -203,6 +205,8 @@ function main()::Nothing
     end
     =#
 
+    model = get_model(tensors)
+
     # ==== Tokenization ====
 
     # Token IDs
@@ -231,7 +235,7 @@ function main()::Nothing
     # I'll use it just for the prompt embedding.
     # (Can I use it for text generation, technically?)
     for (pos, id) in enumerate(ids)
-        logits = transformer!(id, pos, tensors, k_caches, v_caches)
+        logits = transformer!(id, pos, model, k_caches, v_caches)
     end
 end
 

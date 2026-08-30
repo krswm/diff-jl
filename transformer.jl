@@ -20,6 +20,8 @@ export transformer!
 
 using Statistics
 
+using ..Model
+
 #=
 function layer_norm(
     x::Vector{Float32},
@@ -80,14 +82,11 @@ end
 function transformer!(
     id::Int,
     pos::Int,
-    tensors::Dict{String,Array},
+    model::Model,
     k_caches::Vector{Vector{Matrix{Float32}}},
     v_caches::Vector{Vector{Matrix{Float32}}},
 )::Vector{Float32}
-    x = (
-        permutedims(tensors["cond_stage_model.transformer.text_model.embeddings.token_embedding.weight"])[:, id+1]
-        + permutedims(tensors["cond_stage_model.transformer.text_model.embeddings.position_embedding.weight"])[:, pos]
-    )
+    x = model.wte[:, id+1] + model.wpe[:, pos]
     x |> tshow
     exit(0)  # bye bye
     #=

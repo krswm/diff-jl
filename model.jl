@@ -16,10 +16,9 @@
 
 module Model
 
-export Layer, Model, get_model
+export Model, get_model
 
-using JSON
-
+#=
 struct Layer
     g1::Vector{Float32}
     t1::Vector{Float32}
@@ -34,19 +33,20 @@ struct Layer
     w22::Matrix{Float32}
     b22::Vector{Float32}
 end
+=#
 
 struct Model
-    n_ctx::Int
-    n_embd::Int
-    n_head::Int
-    n_layer::Int
-    vocab_size::Int
-    e::Float32
+    # n_ctx::Int
+    # n_embd::Int
+    # n_head::Int
+    # n_layer::Int
+    # vocab_size::Int
+    # e::Float32
     wte::Matrix{Float32}
     wpe::Matrix{Float32}
-    layers::Array{Layer}
-    gf::Vector{Float32}
-    tf::Vector{Float32}
+    # layers::Array{Layer}
+    # gf::Vector{Float32}
+    # tf::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -55,13 +55,15 @@ function validate_size(tensor, expected)
     end
 end
 
-function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
+function get_model(tensors::Dict{String,Array})::Model
+    #=
     n_ctx = config["n_ctx"]
     n_embd = config["n_embd"]
     n_head = config["n_head"]
     n_layer = config["n_layer"]
     vocab_size = config["vocab_size"]
     e = Float32(config["layer_norm_epsilon"])
+    =#
 
     # Regarding a product between a matrix and a vector,
     # it feels more natural for me to perform:
@@ -81,10 +83,11 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     #               ┃ h │ i ┃
     #               ┗━━━┷━━━┛
     # Therefore, I apply `permutedims` to 2D tensors here.
-    wte = permutedims(tensors["wte.weight"])
-    validate_size(wte, (n_embd, vocab_size))
-    wpe = permutedims(tensors["wpe.weight"])
-    validate_size(wpe, (n_embd, n_ctx))
+    wte = permutedims(tensors["cond_stage_model.transformer.text_model.embeddings.token_embedding.weight"])
+    # validate_size(wte, (n_embd, vocab_size))
+    wpe = permutedims(tensors["cond_stage_model.transformer.text_model.embeddings.position_embedding.weight"])
+    # validate_size(wpe, (n_embd, n_ctx))
+    #=
     layers = Layer[]
     for i = 0:(n_layer-1)
         g1 = tensors["h.$i.ln_1.weight"]
@@ -118,8 +121,9 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     validate_size(gf, (n_embd,))
     tf = tensors["ln_f.bias"]
     validate_size(tf, (n_embd,))
+    =#
 
-    Model(n_ctx, n_embd, n_head, n_layer, vocab_size, e, wte, wpe, layers, gf, tf)
+    Model(wte, wpe)
 end
 
 end
