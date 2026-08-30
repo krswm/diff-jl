@@ -24,18 +24,12 @@ using .Tokenizer
 include("transformer.jl")
 using .Transformer
 
-function tshow(x)
-    show(IOContext(stdout, :limit => true), "text/plain", x)
-    println()
-end
-
-# Originally taken from my GPT-2 inference implementation.
-function main()::Nothing
-    if length(ARGS) ≠ 3
+function main()::Matrix{Float32}
+    if length(ARGS) ≠ 2
         println("GPT-2 Inference with Julia")
         print("Usage: ")
         printstyled(
-            "julia --project $PROGRAM_FILE <path to model repository> <path to model safetensors> <your prompt>",
+            "julia --project $PROGRAM_FILE <path to model repository> <your prompt>",
             bold = true,
         )
         println()
@@ -66,19 +60,18 @@ function main()::Nothing
         ranks
     end
 
-    tensors = load_safetensors(ARGS[2])
-
-    model = get_model(tensors)
+    model = begin
+        tensors = load_safetensors("$(ARGS[1])/model.safetensors")
+        get_model(tensors)
+    end
 
     # ==== Tokenization ====
 
     # Token IDs
-    ids = tokenize(token_to_id, ranks, ARGS[3], model.n_ctx)
-    ids |> length |> println
+    ids = tokenize(token_to_id, ranks, ARGS[2], model.n_ctx)
 
     # ==== Inference ====
 
-    id = 0
     k_caches = [
         [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
         for _ = 1:model.n_layer
@@ -87,15 +80,11 @@ function main()::Nothing
         [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
         for _ = 1:model.n_layer
     ]
-
-    prompt_embedding = Matrix{Float32}(undef, model.n_embd, 0)
-    for (pos, id) in enumerate(ids)
-         prompt_embedding = hcat(
-            prompt_embedding,
-            transformer!(id, pos, model, k_caches, v_caches),
-        )
+    x = Matrix{Float32}(undef, model.n_embd, 0)
+    for (pos, id) ∈ enumerate(ids)
+        x = hcat(x, transformer!(id, pos, model, k_caches, v_caches))
     end
-   prompt_embedding |> tshow
+    x
 end
 
 main()
