@@ -152,16 +152,19 @@ end
 end
 
 using JSON
+using SafeTensors
 
 using .Tokenizer
+include("transformer.jl")
+using .Transformer
 
 # Originally taken from my GPT-2 inference implementation.
 function main()::Nothing
-    if length(ARGS) ≠ 2
+    if length(ARGS) ≠ 3
         println("GPT-2 Inference with Julia")
         print("Usage: ")
         printstyled(
-            "julia --project $PROGRAM_FILE <path to model repository> <your prompt>",
+            "julia --project $PROGRAM_FILE <path to model repository> <path to model safetensors> <your prompt>",
             bold = true,
         )
         println()
@@ -192,16 +195,35 @@ function main()::Nothing
         ranks
     end
 
+    tensors = load_safetensors(ARGS[2])
+
     # ==== Tokenization ====
 
     # Token IDs
-    ids = tokenize(token_to_id, ranks, ARGS[2], 77)
+    ids = tokenize(token_to_id, ranks, ARGS[3], 77)
     if length(ids) == 0
         println("Your prompt should not be empty.")
         exit()
     end
 
-    println(ids)
+    # ==== Inference ====
+
+    id = 0
+    k_caches = [
+        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
+        for _ = 1:model.n_layer
+    ]
+    v_caches = [
+        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
+        for _ = 1:model.n_layer
+    ]
+
+    # This time the transformer will used not for text generation.
+    # I'll use it just for the prompt embedding.
+    # (Can I use it for text generation, technically?)
+    for (pos, id) ∈ enumerate(ids)
+        logits = transformer!(id, pos, tensors, k_caches, v_caches)
+    end
 end
 
 main()
