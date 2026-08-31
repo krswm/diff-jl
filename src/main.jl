@@ -123,19 +123,24 @@ function main()::Nothing
         model.enc_wc1 |> size |> println
         model.enc_bc1 |> size |> println
 
+        println("z start")
+        z = [
+            model.enc_wc1i[ξ, η, k, Cout] .* x[:, :, k, N]
+            for ξ = 1:3, η = 1:3, k = 1:4, Cout = 1:130, N = 1:2
+        ]
+        println("z end")
+
         println("start")
-        y = Array{Float32}(undef, 64, 64, 320, 2)
-        for X = 1:64, Y = 1:64, Cout = 1:320, N = 1:2
-            y[X, Y, Cout, N] = sum(
+        y = [
+            sum(
                 1 ≤ X + ΔX ≤ 64 && 1 ≤ Y + ΔY ≤ 64
-                ? model.enc_wc1[ΔX + 2, ΔY + 2, k, Cout]
-                * x[X + ΔX, Y + ΔY, k, N]
+                ? z[ΔX + 2, ΔY + 2, k, Cout, N]
                 : 0.0f0
-                for ΔX = -1:1
-                for ΔY = -1:1
-                for k = 1:4
+                for ΔX = -1:1, ΔY = -1:1, k = 1:4
             ) + model.enc_bc1[Cout]
-        end
+            for X = 1:64, Y = 1:64, Cout = 1:320, N = 1:2
+        ]
+
         println("end")
         # At least it gets correct result but it's super slow :(
 
