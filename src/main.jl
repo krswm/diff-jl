@@ -108,9 +108,9 @@ function main()::Nothing
     rand42 = load_safetensors(ARGS[2])
 
     for t = 900:-100:0
-        x = rand42["l"]
+        x = permutedims(rand42["l"], (4, 3, 2, 1))
 
-        x = cat(x, x, dims = 1)
+        x = cat(x, x, dims = 4)
 
         f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
         f = vcat(cos.(f), sin.(f))
@@ -123,28 +123,24 @@ function main()::Nothing
         model.enc_wc1 |> size |> println
         model.enc_bc1 |> size |> println
 
-        x = [
-            [
-                [
-                    [
-                        sum(
-                            1 ≤ X + ΔX ≤ 64 && 1 ≤ Y + ΔY ≤ 64
-                            ? model.enc_wc1[Cout, k, ΔX + 2, ΔY + 2]
-                            * x[N, k, X + ΔX, Y + ΔY]
-                            : 0.0f0
-                            for ΔX = -1:1
-                            for ΔY = -1:1
-                            for k = 1:4
-                        ) + model.enc_bc1[Cout]
-                        for X = 1:64
-                    ]
-                    for Y = 1:64
-                ]
-                for Cout = 1:4
-            ] for N = 1:2
-        ]
-        x |> println
-        x |> size |> println
+        println("start")
+        y = Array{Float32}(undef, 64, 64, 320, 2)
+        for X = 1:64, Y = 1:64, Cout = 1:320, N = 1:2
+            y[X, Y, Cout, N] = sum(
+                1 ≤ X + ΔX ≤ 64 && 1 ≤ Y + ΔY ≤ 64
+                ? model.enc_wc1[ΔX + 2, ΔY + 2, k, Cout]
+                * x[X + ΔX, Y + ΔY, k, N]
+                : 0.0f0
+                for ΔX = -1:1
+                for ΔY = -1:1
+                for k = 1:4
+            ) + model.enc_bc1[Cout]
+        end
+        println("end")
+        # At least it gets correct result but it's super slow :(
+
+        show(IOContext(stdout, :limit => true), "text/plain", y)
+        println()
 
         exit()
     end
