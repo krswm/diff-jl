@@ -62,17 +62,3 @@ end
 
 # CLIP
 # Is this different from transformer of LLM?
-
-include("model.jl")
-using .Model
-include("tokenizer.jl")
-using .Tokenizer
-include("transformer.jl")
-using .Transformer
-include("clip.jl")
-using .CLIP
-
-function main()::Nothing
-end
-
-main()
