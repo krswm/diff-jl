@@ -123,18 +123,28 @@ function main()::Nothing
         model.enc_wc1 |> size |> println
         model.enc_bc1 |> size |> println
 
-        N = 1
-        Cout = 1
-        sum = 0.0f0
-        sum += model.enc_bc1[Cout]
-        for k = 1:4
-            for ΔX = 1:2
-                for ΔY = 1:3
-                    sum += model.enc_wc1[Cout, k, ΔX + 1, ΔY] * x[N, k, ΔX, ΔY]
-                end
-            end
-        end
-        sum |> println
+        x = [
+            [
+                [
+                    [
+                        sum(
+                            1 ≤ X + ΔX ≤ 64 && 1 ≤ Y + ΔY ≤ 64
+                            ? model.enc_wc1[Cout, k, ΔX + 2, ΔY + 2]
+                            * x[N, k, X + ΔX, Y + ΔY]
+                            : 0.0f0
+                            for ΔX = -1:1
+                            for ΔY = -1:1
+                            for k = 1:4
+                        ) + model.enc_bc1[Cout]
+                        for X = 1:64
+                    ]
+                    for Y = 1:64
+                ]
+                for Cout = 1:4
+            ] for N = 1:2
+        ]
+        x |> println
+        x |> size |> println
 
         exit()
     end
