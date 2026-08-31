@@ -113,7 +113,18 @@ function main()::Nothing
         x = cat(x, x, dims = 4)
 
         f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
-        f = vcat(cos.(x), sin.(x))
+        f = vcat(cos.(f), sin.(f))
+
+        f = model.time_w1 * f + model.time_b1
+        show(IOContext(stdout, :limit => true), "text/plain", f)
+        println()
+        f = f ./ (exp.(-f) .+ 1)
+        show(IOContext(stdout, :limit => true), "text/plain", f)
+        println()
+        f = model.time_w2 * f + model.time_b2
+        show(IOContext(stdout, :limit => true), "text/plain", f)
+        println()
+        exit()
     end
 end
 

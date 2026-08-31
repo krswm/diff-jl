@@ -47,6 +47,11 @@ struct Model
     layers::Array{Layer}
     gf::Vector{Float32}
     tf::Vector{Float32}
+
+    time_w1::Matrix{Float32}
+    time_b1::Vector{Float32}
+    time_w2::Matrix{Float32}
+    time_b2::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -110,7 +115,29 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     tf = tensors["$prefix.final_layer_norm.bias"]
     validate_size(tf, (n_embd,))
 
-    Model(n_ctx, n_embd, n_head, n_layer, vocab_size, e, wte, wpe, layers, gf, tf)
+    prefix = "model.diffusion_model.time_embed"
+    time_w1 = tensors["$prefix.0.weight"]
+    time_b1 = tensors["$prefix.0.bias"]
+    time_w2 = tensors["$prefix.2.weight"]
+    time_b2 = tensors["$prefix.2.bias"]
+
+    Model(
+        n_ctx,
+        n_embd,
+        n_head,
+        n_layer,
+        vocab_size,
+        e,
+        wte,
+        wpe,
+        layers,
+        gf,
+        tf,
+        time_w1,
+        time_b1,
+        time_w2,
+        time_b2,
+    )
 end
 
 end
