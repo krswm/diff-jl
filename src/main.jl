@@ -93,7 +93,7 @@ function main()::Nothing
 
     positive_prompt_embedding = get_prompt_embedding(positive_ids, model)
     negative_prompt_embedding = get_prompt_embedding(negative_ids, model)
-    prompt_embedding = cat(positive_prompt_embedding, negative_prompt_embedding, dims = 3)
+    c = cat(positive_prompt_embedding, negative_prompt_embedding, dims = 3)
 
     # ====
 
@@ -108,22 +108,34 @@ function main()::Nothing
     rand42 = load_safetensors(ARGS[2])
 
     for t = 900:-100:0
-        x = permutedims(rand42["l"], (4, 3, 2, 1))
+        x = rand42["l"]
 
-        x = cat(x, x, dims = 4)
+        x = cat(x, x, dims = 1)
 
         f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
         f = vcat(cos.(f), sin.(f))
 
         f = model.time_w1 * f + model.time_b1
-        show(IOContext(stdout, :limit => true), "text/plain", f)
-        println()
         f = f ./ (exp.(-f) .+ 1)
-        show(IOContext(stdout, :limit => true), "text/plain", f)
-        println()
         f = model.time_w2 * f + model.time_b2
-        show(IOContext(stdout, :limit => true), "text/plain", f)
-        println()
+
+        x |> size |> println
+        model.enc_wc1 |> size |> println
+        model.enc_bc1 |> size |> println
+
+        N = 1
+        Cout = 1
+        sum = 0.0f0
+        sum += model.enc_bc1[Cout]
+        for k = 1:4
+            for ΔX = 1:2
+                for ΔY = 1:3
+                    sum += model.enc_wc1[Cout, k, ΔX + 1, ΔY] * x[N, k, ΔX, ΔY]
+                end
+            end
+        end
+        sum |> println
+
         exit()
     end
 end

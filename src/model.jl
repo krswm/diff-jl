@@ -52,6 +52,9 @@ struct Model
     time_b1::Vector{Float32}
     time_w2::Matrix{Float32}
     time_b2::Vector{Float32}
+
+    enc_wc1::Array{Float32, 4}
+    enc_bc1::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -121,6 +124,10 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     time_w2 = tensors["$prefix.2.weight"]
     time_b2 = tensors["$prefix.2.bias"]
 
+    prefix = "model.diffusion_model.input_blocks"
+    enc_wc1 = tensors["$prefix.0.0.weight"]
+    enc_bc1 = tensors["$prefix.0.0.bias"]
+
     Model(
         n_ctx,
         n_embd,
@@ -137,6 +144,8 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         time_b1,
         time_w2,
         time_b2,
+        enc_wc1,
+        enc_bc1,
     )
 end
 
