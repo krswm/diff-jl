@@ -93,7 +93,7 @@ function main()::Nothing
 
     positive_prompt_embedding = get_prompt_embedding(positive_ids, model)
     negative_prompt_embedding = get_prompt_embedding(negative_ids, model)
-    prompt_embedding = cat(positive_prompt_embedding, negative_prompt_embedding, dims=3)
+    prompt_embedding = cat(positive_prompt_embedding, negative_prompt_embedding, dims = 3)
 
     # ====
 
@@ -107,11 +107,14 @@ function main()::Nothing
     # I'll use genuine random number generator in Julia later.
     rand42 = load_safetensors(ARGS[2])
 
-    x = permutedims(rand42["l"], (4, 3, 2, 1))
+    for t = 900:-100:0
+        x = permutedims(rand42["l"], (4, 3, 2, 1))
 
-    x = cat(x, x, dims=4)
-    show(IOContext(stdout, :limit => true), "text/plain", x)
-    println()
+        x = cat(x, x, dims = 4)
+
+        f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
+        f = vcat(cos.(x), sin.(x))
+    end
 end
 
 main()
