@@ -42,11 +42,11 @@ function get_prompt_embedding(ids::Vector{Int}, model::Model.Model)::Matrix{Floa
 end
 
 function main()::Nothing
-    if length(ARGS) ≠ 3
+    if length(ARGS) ≠ 4
         println("Machine learning stuff with Julia")
         print("Usage: ")
         printstyled(
-            "julia --project $PROGRAM_FILE <path to model repository> <your positive prompt> <your negative prompt>",
+            "julia --project $PROGRAM_FILE <path to model repository> <path to pre-sampled random tensors> <your positive prompt> <your negative prompt>",
             bold = true,
         )
         println()
@@ -86,15 +86,31 @@ function main()::Nothing
     # ==== Tokenization ====
 
     # Token IDs
-    positive_ids = tokenize(token_to_id, ranks, model, ARGS[2])
-    negative_ids = tokenize(token_to_id, ranks, model, ARGS[3])
+    positive_ids = tokenize(token_to_id, ranks, model, ARGS[3])
+    negative_ids = tokenize(token_to_id, ranks, model, ARGS[4])
 
     # ==== Inference ====
 
     positive_prompt_embedding = get_prompt_embedding(positive_ids, model)
     negative_prompt_embedding = get_prompt_embedding(negative_ids, model)
     prompt_embedding = cat(positive_prompt_embedding, negative_prompt_embedding, dims=3)
-    show(IOContext(stdout, :limit => true), "text/plain", prompt_embedding)
+
+    # ====
+
+    # Pre-sampled random tensors
+    # The diffusion model requires a random noise,
+    # however, I want the whole tensor calculation deterministic
+    # so that I can compare the result with the reference implementation.
+    # I extracted the random tensors from reference implementation 
+    # (https://github.com/hkproj/pytorch-stable-diffusion, excellent explanation video!)
+    # and save it to a Safetensors file.
+    # I'll use genuine random number generator in Julia later.
+    rand42 = load_safetensors(ARGS[2])
+
+    x = permutedims(rand42["l"], (4, 3, 2, 1))
+
+    x = cat(x, x, dims=4)
+    show(IOContext(stdout, :limit => true), "text/plain", x)
     println()
 end
 
