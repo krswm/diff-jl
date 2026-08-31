@@ -14,17 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+module CLIP
+
+export clip
+
 using JSON
 using SafeTensors
 
-include("model.jl")
-using .Model
-include("tokenizer.jl")
-using .Tokenizer
-include("transformer.jl")
-using .Transformer
+using ..Model
+using ..Tokenizer
+using ..Transformer
 
-function main()::Matrix{Float32}
+function clip()::Matrix{Float32}
     if length(ARGS) ≠ 2
         println("GPT-2 Inference with Julia")
         print("Usage: ")
@@ -85,9 +86,7 @@ function main()::Matrix{Float32}
     for (pos, id) ∈ enumerate(ids)
         x = hcat(x, transformer!(id, pos, model, k_caches, v_caches))
     end
-    show(IOContext(stdout, :limit => true), "text/plain", x)
-    println()
     x
 end
 
-main()
+end
