@@ -24,12 +24,29 @@ using .Tokenizer
 include("transformer.jl")
 using .Transformer
 
-function main()::Matrix{Float32}
-    if length(ARGS) ≠ 2
-        println("GPT-2 Inference with Julia")
+function get_prompt_embedding(ids::Vector{Int}, model::Model.Model)::Matrix{Float32}
+    k_caches = [
+        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
+        for _ = 1:model.n_layer
+    ]
+    v_caches = [
+        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
+        for _ = 1:model.n_layer
+    ]
+    x = Vector{Float32}[]
+    for (pos, id) ∈ enumerate(ids)
+        push!(x, transformer!(id, pos, model, k_caches, v_caches))
+    end
+    x = hcat(x...)
+    x
+end
+
+function main()::Nothing
+    if length(ARGS) ≠ 3
+        println("Machine learning stuff with Julia")
         print("Usage: ")
         printstyled(
-            "julia --project $PROGRAM_FILE <path to model repository> <your prompt>",
+            "julia --project $PROGRAM_FILE <path to model repository> <your positive prompt> <your negative prompt>",
             bold = true,
         )
         println()
@@ -69,25 +86,16 @@ function main()::Matrix{Float32}
     # ==== Tokenization ====
 
     # Token IDs
-    ids = tokenize(token_to_id, ranks, model, ARGS[2])
+    positive_ids = tokenize(token_to_id, ranks, model, ARGS[2])
+    negative_ids = tokenize(token_to_id, ranks, model, ARGS[3])
 
     # ==== Inference ====
 
-    k_caches = [
-        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
-        for _ = 1:model.n_layer
-    ]
-    v_caches = [
-        [Matrix{Float32}(undef, model.n_embd ÷ model.n_head, 0) for _ = 1:model.n_head]
-        for _ = 1:model.n_layer
-    ]
-    x = Matrix{Float32}(undef, model.n_embd, 0)
-    for (pos, id) ∈ enumerate(ids)
-        x = hcat(x, transformer!(id, pos, model, k_caches, v_caches))
-    end
-    show(IOContext(stdout, :limit => true), "text/plain", x)
+    positive_prompt_embedding = get_prompt_embedding(positive_ids, model)
+    negative_prompt_embedding = get_prompt_embedding(negative_ids, model)
+    prompt_embedding = cat(positive_prompt_embedding, negative_prompt_embedding, dims=3)
+    show(IOContext(stdout, :limit => true), "text/plain", prompt_embedding)
     println()
-    x
 end
 
 main()
