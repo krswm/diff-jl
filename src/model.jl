@@ -74,6 +74,9 @@ struct Model
     t_1_1_norm::Vector{Float32}
     wc_1_1_proj_in::Array{Float32, 4}
     bc_1_1_proj_in::Vector{Float32}
+
+    g_1_1_transformer_blocks_0_norm1::Vector{Float32}
+    t_1_1_transformer_blocks_0_norm1::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -167,6 +170,12 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     wc_1_1_proj_in = tensors["$prefix.1.1.proj_in.weight"]
     bc_1_1_proj_in = tensors["$prefix.1.1.proj_in.bias"]
     
+    g_1_1_transformer_blocks_0_norm1 = tensors[
+        "$prefix.1.1.transformer_blocks.0.norm1.weight"
+    ]
+    t_1_1_transformer_blocks_0_norm1 = tensors[
+        "$prefix.1.1.transformer_blocks.0.norm1.bias"
+    ]
 
     Model(
         n_ctx,
@@ -200,6 +209,8 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         t_1_1_norm,
         wc_1_1_proj_in,
         bc_1_1_proj_in,
+        g_1_1_transformer_blocks_0_norm1,
+        t_1_1_transformer_blocks_0_norm1,
     )
 end
 

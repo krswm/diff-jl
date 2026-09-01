@@ -192,6 +192,14 @@ function main()::Nothing
         ]
     end
 
+    function layer_norm(
+        x::Vector{Float32},
+        g::Vector{Float32},
+        t::Vector{Float32},
+    )::Vector{Float32}
+        g .* (x .- mean(x)) ./ √(var(x, corrected = false) + 1f-5) + t
+    end
+
     # Pre-sampled random tensors
     # The diffusion model requires a random noise,
     # however, I want the whole tensor calculation deterministic
@@ -272,23 +280,41 @@ function main()::Nothing
         latent += merged
 
         x = latent
-
-        print("\x1b[91m")
-        show(IOContext(stdout, :limit => true), "text/plain", x)
-        print("\x1b[39m")
-        println()
-
         x = groupnorm(model.g_1_1_norm, model.t_1_1_norm, 32, x)
-
-        print("\x1b[92m")
-        show(IOContext(stdout, :limit => true), "text/plain", x)
-        print("\x1b[39m")
-        println()
-
         x = conv2d(model.wc_1_1_proj_in, model.bc_1_1_proj_in, x)
 
-        print("\x1b[93m")
+        print("\x1b[91m")
+        println(size(x))
         show(IOContext(stdout, :limit => true), "text/plain", x)
+        print("\x1b[39m")
+        println()
+
+        # n o y x -> x y o n -> xy o n -> n [xy o]
+        # (Pytorch is row-major but Julia is column-major)
+        x = permutedims(x, (4, 3, 2, 1))
+        x = reshape(x, (64 * 64, 320, 2))
+        x = eachslice(x, dims=3)
+        y = x
+
+        print("\x1b[93m")
+        println(size(x[1]))
+        show(IOContext(stdout, :limit => true), "text/plain", x[1])
+        print("\x1b[39m")
+        println()
+
+        x = [
+            begin
+                yy = [
+                    layer_norm(collect(z), model.g_1_1_transformer_blocks_0_norm1, model.t_1_1_transformer_blocks_0_norm1)
+                    for z in eachslice(y, dims=1)
+                ]
+                hcat(yy...)
+            end for y in x
+        ]
+        
+        print("\x1b[92m")
+        println(size(x[1]))
+        show(IOContext(stdout, :limit => true), "text/plain", x[1])
         print("\x1b[39m")
         println()
         
