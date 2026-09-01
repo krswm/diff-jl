@@ -64,6 +64,11 @@ struct Model
 
     enc_time_w1::Matrix{Float32}
     enc_time_b1::Vector{Float32}
+
+    g_1_0_out_layers_0::Vector{Float32}
+    t_1_0_out_layers_0::Vector{Float32}
+    wc_1_0_out_layers_3::Array{Float32, 4}
+    bc_1_0_out_layers_3::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -146,6 +151,11 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     enc_time_w1 = tensors["$prefix.1.0.emb_layers.1.weight"]
     enc_time_b1 = tensors["$prefix.1.0.emb_layers.1.bias"]
 
+    g_1_0_out_layers_0 = tensors["$prefix.1.0.out_layers.0.weight"]
+    t_1_0_out_layers_0 = tensors["$prefix.1.0.out_layers.0.bias"]
+    wc_1_0_out_layers_3 = tensors["$prefix.1.0.out_layers.3.weight"]
+    bc_1_0_out_layers_3 = tensors["$prefix.1.0.out_layers.3.bias"]
+
     Model(
         n_ctx,
         n_embd,
@@ -170,6 +180,10 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         enc_bc2,
         enc_time_w1,
         enc_time_b1,
+        g_1_0_out_layers_0,
+        t_1_0_out_layers_0,
+        wc_1_0_out_layers_3,
+        bc_1_0_out_layers_3,
     )
 end
 

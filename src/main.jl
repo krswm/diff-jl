@@ -146,6 +146,35 @@ function main()::Nothing
         ]
     end
 
+    function groupnorm(g::Vector{Float32}, t::Vector{Float32}, num_groups::Int, conv::Array{Float32, 4})::Array{Float32, 4}
+        N, C, H, W = size(conv)
+        @assert C % num_groups == 0
+        size_of_group = C ÷ num_groups
+        
+        conv_mean = [
+            mean(
+                conv[n, group * size_of_group + igroup, y, x]
+                for igroup = 1:size_of_group, y = 1:H, x = 1:W
+            )
+            for n = 1:N, group = 0:(num_groups - 1)
+        ]
+
+        conv_var = [
+            var(
+                (
+                    conv[n, group * size_of_group + igroup, y, x]
+                    for igroup = 1:size_of_group, y = 1:H, x = 1:W
+                ), corrected = false
+            )
+            for n = 1:N, group = 0:(num_groups - 1)
+        ]
+
+        [
+            (g[o] * (conv[n, o, y, x] - conv_mean[n, (o - 1) ÷ size_of_group + 1]) / √(conv_var[n, (o - 1) ÷ size_of_group + 1] + 1f-5) + t[o])
+            for n = 1:N, o = 1:C, y = 1:H, x = 1:W
+        ]
+    end
+
     # Pre-sampled random tensors
     # The diffusion model requires a random noise,
     # however, I want the whole tensor calculation deterministic
@@ -179,7 +208,7 @@ function main()::Nothing
         # \/
         # /\ n i y x
 
-        conv = conv2d(model.enc_wc1, model.enc_bc1, latent)
+        latent = conv2d(model.enc_wc1, model.enc_bc1, latent)
 
        
         ####
@@ -206,53 +235,29 @@ function main()::Nothing
         rrr = reshape(rr, (64, 64, 320, 2))
         =#
 
-        conv_mean = [
-            mean(
-                conv[n, group * 10 + igroup, y, x]
-                for igroup = 1:10, y = 1:64, x = 1:64
-            )
-            for n = 1:2, group = 0:31
-        ]
-
-        conv_var = [
-            var(
-                (
-                    conv[n, group * 10 + igroup, y, x]
-                    for igroup = 1:10, y = 1:64, x = 1:64
-                ), corrected = false
-            )
-            for n = 1:2, group = 0:31
-        ]
-
-        x = [
-            (model.enc_gg1[o] * (conv[n, o, y, x] - conv_mean[n, (o - 1) ÷ 10 + 1]) / √(conv_var[n, (o - 1) ÷ 10 + 1] + 1f-5) + model.enc_tg1[o])
-            # Ahh! enc_gg1 and enc_tg1 are VECTORS not scalars!
-            for n = 1:2, o = 1:320, y = 1:64, x = 1:64
-        ]
+        x = groupnorm(model.enc_gg1, model.enc_tg1, 32, latent)
 
         x = x ./ (exp.(-x) .+ 1)
 
         x = conv2d(model.enc_wc2, model.enc_bc2, x)
 
-        print("\x1b[91m")
-        show(IOContext(stdout, :limit => true), "text/plain", f)
-        print("\x1b[39m")
-        println()
-
         f = f ./ (exp.(-f) .+ 1)
-
-        print("\x1b[92m")
-        show(IOContext(stdout, :limit => true), "text/plain", f)
-        print("\x1b[39m")
-        println()
 
         f = model.enc_time_w1 * f + model.enc_time_b1
 
-        print("\x1b[92m")
-        show(IOContext(stdout, :limit => true), "text/plain", f)
+        merged = [
+            x[n, o, y, x_] + f[o]
+            for n = 1:2, o = 1:320, y = 1:64, x_ = 1:64
+        ]
+        merged = groupnorm(model.g_1_0_out_layers_0, model.t_1_0_out_layers_0, 32, merged)
+        merged = merged ./ (exp.(-merged) .+ 1)
+        merged = conv2d(model.wc_1_0_out_layers_3, model.bc_1_0_out_layers_3, merged)
+        latent += merged
+
+        print("\x1b[97m")
+        show(IOContext(stdout, :limit => true), "text/plain", latent)
         print("\x1b[39m")
         println()
-       
 
         #=
         model.enc_gg1
