@@ -125,7 +125,7 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     time_b2 = tensors["$prefix.2.bias"]
 
     prefix = "model.diffusion_model.input_blocks"
-    enc_wc1 = permutedims(tensors["$prefix.0.0.weight"], (4, 3, 2, 1))
+    enc_wc1 = tensors["$prefix.0.0.weight"]
     enc_bc1 = tensors["$prefix.0.0.bias"]
 
     Model(

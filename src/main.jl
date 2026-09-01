@@ -107,11 +107,9 @@ function main()::Nothing
     # I'll use genuine random number generator in Julia later.
     rand42 = load_safetensors(ARGS[2])
 
+    latent = rand42["l"]
+
     for t = 900:-100:0
-        x = permutedims(rand42["l"], (4, 3, 2, 1))
-
-        x = cat(x, x, dims = 4)
-
         f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
         f = vcat(cos.(f), sin.(f))
 
@@ -119,22 +117,94 @@ function main()::Nothing
         f = f ./ (exp.(-f) .+ 1)
         f = model.time_w2 * f + model.time_b2
 
-        x |> size |> println
-        model.enc_wc1 |> size |> println
-        model.enc_bc1 |> size |> println
+        println("start")
 
+        # Indices:
+        # - n (batch)   1 ≤ n ≤ 2
+        # - i (Cin)     1 ≤ i ≤ 4
+        # - o (Cout)    1 ≤ o ≤ 320
+        # - y (y axis)  1 ≤ y ≤ 64
+        # - x (x axis)  1 ≤ x ≤ 64
+        # - η (Δy+2)    1 ≤ η ≤ 3
+        # - ξ (Δx+2)    1 ≤ ξ ≤ 3
+
+        latent = cat(latent, latent, dims = 1)
+        # \/
+        # /\ n i y x
+
+        _X_s = eachslice(permutedims(latent, (2, 1, 3, 4)), dims=(3, 4))
+        # Matrix of matrices(↓)
+        #
+        # X[i=1 n=1] X[i=1 n=2] ...
+        # X[i=2 n=1] X[i=2 n=2]
+        # ...                   ...
+        #
+        # for each (y, x)
+        _X_s |> size |> println
+        _X_s[1, 1] |> size |> println
+        
+        # model.enc_wc1
+        #               Cout Cin η ξ
+    
+        _W_s = eachslice(model.enc_wc1, dims=(3, 4))
+        # Matrix of matrices(↓)
+        #
+        # W[o=1 i=1] W[o=1 i=2] ...
+        # W[o=2 i=1] W[o=2 i=2]
+        # ...                   ...
+        #
+        # for each (η, ξ)
+        _W_s |> size |> println
+        _W_s[1, 1] |> size |> println
+
+        _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:3, ξ = 1:3, y = 1:64, x = 1:64]
+        # 4D tensor of matrices(↓)
+        #
+        # A[o=1 n=1] A[o=1 n=2] ...
+        # A[o=2 n=1] A[o=2 n=2]
+        # ...                   ...
+        #
+        # for each (η, ξ, y, x)
+
+        _A_ |> size |> println
+        _A_[1, 1, 1, 1] |> size |> println
+
+        conv = [
+            sum(
+                1 ≤ y + Δy ≤ 64 && 1 ≤ x + Δx ≤ 64
+                ? _A_[Δy + 2, Δx + 2, y + Δy, x + Δx][o, n] : 0.0f0
+                for Δy = -1:1, Δx = -1:1
+            ) + model.enc_bc1[o]
+            for o = 1:320, n = 1:2, y = 1:64, x = 1:64
+        ]
+        # conv
+        #      o n y x
+
+        show(IOContext(stdout, :limit => true), "text/plain", permutedims(conv, (4, 3, 2, 1)))
+        println()
+
+        
+        # Noticeably faster. It might not be optimal but it's enough.
+        
+        println("end")
+        exit(0)
+
+        #=
         println("z start")
         z = [
             model.enc_wc1i[ξ, η, k, Cout] .* x[:, :, k, N]
             for ξ = 1:3, η = 1:3, k = 1:4, Cout = 1:130, N = 1:2
         ]
         println("z end")
+        =#
 
         println("start")
+        enc_wc1 = permutedims(model.enc_wc1, (4, 3, 1, 2))
         y = [
             sum(
                 1 ≤ X + ΔX ≤ 64 && 1 ≤ Y + ΔY ≤ 64
-                ? z[ΔX + 2, ΔY + 2, k, Cout, N]
+                ? enc_wc1[ΔX + 2, ΔY + 2, k, Cout]
+                * x[X + ΔX, Y + ΔY, k, N]
                 : 0.0f0
                 for ΔX = -1:1, ΔY = -1:1, k = 1:4
             ) + model.enc_bc1[Cout]
