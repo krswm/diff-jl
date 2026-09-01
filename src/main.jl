@@ -206,11 +206,6 @@ function main()::Nothing
         rrr = reshape(rr, (64, 64, 320, 2))
         =#
 
-        print("\x1b[93m")
-        show(IOContext(stdout, :limit => true), "text/plain", conv)
-        print("\x1b[39m")
-        println()
-
         conv_mean = [
             mean(
                 conv[n, group * 10 + igroup, y, x]
@@ -235,22 +230,26 @@ function main()::Nothing
             for n = 1:2, o = 1:320, y = 1:64, x = 1:64
         ]
 
-        print("\x1b[91m")
-        show(IOContext(stdout, :limit => true), "text/plain", x)
-        print("\x1b[39m")
-        println()
-
         x = x ./ (exp.(-x) .+ 1)
-
-        print("\x1b[94m")
-        show(IOContext(stdout, :limit => true), "text/plain", x)
-        print("\x1b[39m")
-        println()
 
         x = conv2d(model.enc_wc2, model.enc_bc2, x)
 
+        print("\x1b[91m")
+        show(IOContext(stdout, :limit => true), "text/plain", f)
+        print("\x1b[39m")
+        println()
+
+        f = f ./ (exp.(-f) .+ 1)
+
         print("\x1b[92m")
-        show(IOContext(stdout, :limit => true), "text/plain", x)
+        show(IOContext(stdout, :limit => true), "text/plain", f)
+        print("\x1b[39m")
+        println()
+
+        f = model.enc_time_w1 * f + model.enc_time_b1
+
+        print("\x1b[92m")
+        show(IOContext(stdout, :limit => true), "text/plain", f)
         print("\x1b[39m")
         println()
        

@@ -61,6 +61,9 @@ struct Model
 
     enc_wc2::Array{Float32, 4}
     enc_bc2::Vector{Float32}
+
+    enc_time_w1::Matrix{Float32}
+    enc_time_b1::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -140,6 +143,9 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     enc_wc2 = tensors["$prefix.1.0.in_layers.2.weight"]
     enc_bc2 = tensors["$prefix.1.0.in_layers.2.bias"]
 
+    enc_time_w1 = tensors["$prefix.1.0.emb_layers.1.weight"]
+    enc_time_b1 = tensors["$prefix.1.0.emb_layers.1.bias"]
+
     Model(
         n_ctx,
         n_embd,
@@ -162,6 +168,8 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         enc_tg1,
         enc_wc2,
         enc_bc2,
+        enc_time_w1,
+        enc_time_b1,
     )
 end
 
