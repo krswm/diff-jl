@@ -55,6 +55,9 @@ struct Model
 
     enc_wc1::Array{Float32, 4}
     enc_bc1::Vector{Float32}
+
+    enc_gg1::Vector{Float32}
+    enc_tg1::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -128,6 +131,9 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     enc_wc1 = tensors["$prefix.0.0.weight"]
     enc_bc1 = tensors["$prefix.0.0.bias"]
 
+    enc_gg1 = tensors["$prefix.1.0.in_layers.0.weight"]
+    enc_tg1 = tensors["$prefix.1.0.in_layers.0.bias"]  # I mistyped bias as weight >:( It took me time to find this
+
     Model(
         n_ctx,
         n_embd,
@@ -146,6 +152,8 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         time_b2,
         enc_wc1,
         enc_bc1,
+        enc_gg1,
+        enc_tg1,
     )
 end
 

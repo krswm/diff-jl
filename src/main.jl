@@ -16,6 +16,7 @@
 
 using JSON
 using SafeTensors
+using Statistics
 
 include("model.jl")
 using .Model
@@ -117,8 +118,6 @@ function main()::Nothing
         f = f ./ (exp.(-f) .+ 1)
         f = model.time_w2 * f + model.time_b2
 
-        println("start")
-
         # Indices:
         # - n (batch)   1 ≤ n ≤ 2
         # - i (Cin)     1 ≤ i ≤ 4
@@ -140,8 +139,6 @@ function main()::Nothing
         # ...                   ...
         #
         # for each (y, x)
-        _X_s |> size |> println
-        _X_s[1, 1] |> size |> println
         
         # model.enc_wc1
         #               Cout Cin η ξ
@@ -154,8 +151,6 @@ function main()::Nothing
         # ...                   ...
         #
         # for each (η, ξ)
-        _W_s |> size |> println
-        _W_s[1, 1] |> size |> println
 
         _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:3, ξ = 1:3, y = 1:64, x = 1:64]
         # 4D tensor of matrices(↓)
@@ -166,57 +161,78 @@ function main()::Nothing
         #
         # for each (η, ξ, y, x)
 
-        _A_ |> size |> println
-        _A_[1, 1, 1, 1] |> size |> println
-
         conv = [
             sum(
                 1 ≤ y + Δy ≤ 64 && 1 ≤ x + Δx ≤ 64
                 ? _A_[Δy + 2, Δx + 2, y + Δy, x + Δx][o, n] : 0.0f0
                 for Δy = -1:1, Δx = -1:1
             ) + model.enc_bc1[o]
-            for o = 1:320, n = 1:2, y = 1:64, x = 1:64
+            for n = 1:2, o = 1:320, y = 1:64, x = 1:64
         ]
-        # conv
-        #      o n y x
 
-        show(IOContext(stdout, :limit => true), "text/plain", permutedims(conv, (4, 3, 2, 1)))
-        println()
-
-        
         # Noticeably faster. It might not be optimal but it's enough.
         
-        println("end")
-        exit(0)
+        ####
+
+        # conv
+        #      n o y x
+        # - n (batch)   1 ≤ n ≤ 2
+        # - o (Cout)    1 ≤ o ≤ 320
+        # - y (y axis)  1 ≤ y ≤ 64
+        # - x (x axis)  1 ≤ x ≤ 64
+
 
         #=
-        println("z start")
-        z = [
-            model.enc_wc1i[ξ, η, k, Cout] .* x[:, :, k, N]
-            for ξ = 1:3, η = 1:3, k = 1:4, Cout = 1:130, N = 1:2
+        r = reshape(conv, (64 * 64 * 10, 32 * 2))
+
+        rr = [
+            model.enc_gg1 .* (r[:, gn] .- mean(r[:, gn])) ./ √(var(r[:, gn], corrected = false) + 1f-5) + model.enc_tg1
+            for gn = 1:(32 * 2)
         ]
-        println("z end")
+
+        rr |> size |> println
+        rr[1] |> size |> println
+
+        rrr = reshape(rr, (64, 64, 320, 2))
         =#
 
-        println("start")
-        enc_wc1 = permutedims(model.enc_wc1, (4, 3, 1, 2))
-        y = [
-            sum(
-                1 ≤ X + ΔX ≤ 64 && 1 ≤ Y + ΔY ≤ 64
-                ? enc_wc1[ΔX + 2, ΔY + 2, k, Cout]
-                * x[X + ΔX, Y + ΔY, k, N]
-                : 0.0f0
-                for ΔX = -1:1, ΔY = -1:1, k = 1:4
-            ) + model.enc_bc1[Cout]
-            for X = 1:64, Y = 1:64, Cout = 1:320, N = 1:2
+
+        conv_mean = [
+            mean(
+                conv[n, group * 10 + igroup, y, x]
+                for igroup = 1:10, y = 1:64, x = 1:64
+            )
+            for n = 1:2, group = 0:31
         ]
 
-        println("end")
-        # At least it gets correct result but it's super slow :(
+        conv_var = [
+            var(
+                (
+                    conv[n, group * 10 + igroup, y, x]
+                    for igroup = 1:10, y = 1:64, x = 1:64
+                ), corrected = false
+            )
+            for n = 1:2, group = 0:31
+        ]
 
-        show(IOContext(stdout, :limit => true), "text/plain", y)
+        conv_gn = [
+            (model.enc_gg1 * (conv[n, o, y, x] - conv_mean[n, (o - 1) ÷ 10 + 1]) / √(conv_var[n, (o - 1) ÷ 10 + 1] + 1f-5) + model.enc_tg1)
+            for n = 1:2, o = 1:320, y = 1:64, x = 1:64
+        ]
+
+        show(IOContext(stdout, :limit => true), "text/plain", conv_gn)
         println()
+        
 
+        #=
+        model.enc_gg1
+        model.enc_gt1
+        =#
+        
+        #=
+        g .* (x .- mean(x)) ./ √(var(x, corrected = false) + model.e) + t
+        =#
+        
         exit()
     end
 end
