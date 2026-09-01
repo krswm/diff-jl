@@ -170,6 +170,11 @@ function main()::Nothing
             for n = 1:2, o = 1:320, y = 1:64, x = 1:64
         ]
 
+        print("\x1b[91m")
+        show(IOContext(stdout, :limit => true), "text/plain", conv)
+        print("\x1b[39m")
+        println()
+
         # Noticeably faster. It might not be optimal but it's enough.
         
         ####
@@ -196,6 +201,8 @@ function main()::Nothing
         rrr = reshape(rr, (64, 64, 320, 2))
         =#
 
+        println("[conv]")
+        println(summary(conv))
 
         conv_mean = [
             mean(
@@ -204,6 +211,9 @@ function main()::Nothing
             )
             for n = 1:2, group = 0:31
         ]
+
+        println("[conv_mean]")
+        println(summary(conv_mean))
 
         conv_var = [
             var(
@@ -215,13 +225,22 @@ function main()::Nothing
             for n = 1:2, group = 0:31
         ]
 
+        println("[conv_var]")
+        println(summary(conv_var))
+
         conv_gn = [
-            (model.enc_gg1 * (conv[n, o, y, x] - conv_mean[n, (o - 1) ÷ 10 + 1]) / √(conv_var[n, (o - 1) ÷ 10 + 1] + 1f-5) + model.enc_tg1)
+            (model.enc_gg1[o] * (conv[n, o, y, x] - conv_mean[n, (o - 1) ÷ 10 + 1]) / √(conv_var[n, (o - 1) ÷ 10 + 1] + 1f-5) + model.enc_tg1[o])
+            # Ahh! enc_gg1 and enc_tg1 are VECTORS not scalars!
             for n = 1:2, o = 1:320, y = 1:64, x = 1:64
         ]
 
+        print("\x1b[92m")
         show(IOContext(stdout, :limit => true), "text/plain", conv_gn)
+        print("\x1b[39m")
         println()
+        println(size(conv_gn))
+        println(summary(conv_gn))
+        println(conv_gn[2, 319, 64, 64])
         
 
         #=
