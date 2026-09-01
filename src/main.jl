@@ -104,7 +104,24 @@ function main()::Nothing
         N, Cin, H, W = size(latent)
 
         Cout, Cin_, HH, WW = size(wc)
-        @assert Cin == Cin_ && HH == 3 && WW == 3
+        @assert Cin == Cin_ && HH == WW && HH % 2 == 1
+
+        kw = HH ÷ 2
+        # kernelwidth = 0
+        #
+        # .....
+        # .....
+        # ..O..
+        # .....
+        # .....
+        #
+        # kernelwidth = 1
+        #
+        # .....
+        # .OOO.
+        # .OOO.
+        # .OOO.
+        # .....
 
         _X_s = eachslice(permutedims(latent, (2, 1, 3, 4)), dims=(3, 4))
         # Matrix of matrices(↓)
@@ -127,7 +144,7 @@ function main()::Nothing
         #
         # for each (η, ξ)
 
-        _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:3, ξ = 1:3, y = 1:H, x = 1:W]
+        _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:HH, ξ = 1:WW, y = 1:H, x = 1:W]
         # 4D tensor of matrices(↓)
         #
         # A[o=1 n=1] A[o=1 n=2] ...
@@ -139,8 +156,8 @@ function main()::Nothing
         [
             sum(
                 1 ≤ y + Δy ≤ H && 1 ≤ x + Δx ≤ W
-                ? _A_[Δy + 2, Δx + 2, y + Δy, x + Δx][o, n] : 0.0f0
-                for Δy = -1:1, Δx = -1:1
+                ? _A_[Δy + kw + 1, Δx + kw + 1, y + Δy, x + Δx][o, n] : 0.0f0
+                for Δy = -kw:kw, Δx = -kw:kw
             ) + bc[o]
             for n = 1:N, o = 1:Cout, y = 1:H, x = 1:W
         ]
@@ -254,19 +271,26 @@ function main()::Nothing
         merged = conv2d(model.wc_1_0_out_layers_3, model.bc_1_0_out_layers_3, merged)
         latent += merged
 
-        print("\x1b[97m")
-        show(IOContext(stdout, :limit => true), "text/plain", latent)
+        x = latent
+
+        print("\x1b[91m")
+        show(IOContext(stdout, :limit => true), "text/plain", x)
         print("\x1b[39m")
         println()
 
-        #=
-        model.enc_gg1
-        model.enc_gt1
-        =#
-        
-        #=
-        g .* (x .- mean(x)) ./ √(var(x, corrected = false) + model.e) + t
-        =#
+        x = groupnorm(model.g_1_1_norm, model.t_1_1_norm, 32, x)
+
+        print("\x1b[92m")
+        show(IOContext(stdout, :limit => true), "text/plain", x)
+        print("\x1b[39m")
+        println()
+
+        x = conv2d(model.wc_1_1_proj_in, model.bc_1_1_proj_in, x)
+
+        print("\x1b[93m")
+        show(IOContext(stdout, :limit => true), "text/plain", x)
+        print("\x1b[39m")
+        println()
         
         exit()
     end

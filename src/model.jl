@@ -69,6 +69,11 @@ struct Model
     t_1_0_out_layers_0::Vector{Float32}
     wc_1_0_out_layers_3::Array{Float32, 4}
     bc_1_0_out_layers_3::Vector{Float32}
+
+    g_1_1_norm::Vector{Float32}
+    t_1_1_norm::Vector{Float32}
+    wc_1_1_proj_in::Array{Float32, 4}
+    bc_1_1_proj_in::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -156,6 +161,13 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     wc_1_0_out_layers_3 = tensors["$prefix.1.0.out_layers.3.weight"]
     bc_1_0_out_layers_3 = tensors["$prefix.1.0.out_layers.3.bias"]
 
+
+    g_1_1_norm = tensors["$prefix.1.1.norm.weight"]
+    t_1_1_norm = tensors["$prefix.1.1.norm.bias"]
+    wc_1_1_proj_in = tensors["$prefix.1.1.proj_in.weight"]
+    bc_1_1_proj_in = tensors["$prefix.1.1.proj_in.bias"]
+    
+
     Model(
         n_ctx,
         n_embd,
@@ -184,6 +196,10 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         t_1_0_out_layers_0,
         wc_1_0_out_layers_3,
         bc_1_0_out_layers_3,
+        g_1_1_norm,
+        t_1_1_norm,
+        wc_1_1_proj_in,
+        bc_1_1_proj_in,
     )
 end
 
