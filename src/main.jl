@@ -98,6 +98,54 @@ function main()::Nothing
 
     # ====
 
+    function conv2d(wc::Array{Float32, 4}, bc::Vector{Float32}, latent::Array{Float32, 4})::Array{Float32, 4}
+        # Kernel size 3x3, padding 1
+
+        N, Cin, H, W = size(latent)
+
+        Cout, Cin_, HH, WW = size(wc)
+        @assert Cin == Cin_ && HH == 3 && WW == 3
+
+        _X_s = eachslice(permutedims(latent, (2, 1, 3, 4)), dims=(3, 4))
+        # Matrix of matrices(↓)
+        #
+        # X[i=1 n=1] X[i=1 n=2] ...
+        # X[i=2 n=1] X[i=2 n=2]
+        # ...                   ...
+        #
+        # for each (y, x)
+        
+        # model.enc_wc1
+        #               Cout Cin η ξ
+    
+        _W_s = eachslice(wc, dims=(3, 4))
+        # Matrix of matrices(↓)
+        #
+        # W[o=1 i=1] W[o=1 i=2] ...
+        # W[o=2 i=1] W[o=2 i=2]
+        # ...                   ...
+        #
+        # for each (η, ξ)
+
+        _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:3, ξ = 1:3, y = 1:H, x = 1:W]
+        # 4D tensor of matrices(↓)
+        #
+        # A[o=1 n=1] A[o=1 n=2] ...
+        # A[o=2 n=1] A[o=2 n=2]
+        # ...                   ...
+        #
+        # for each (η, ξ, y, x)
+
+        [
+            sum(
+                1 ≤ y + Δy ≤ H && 1 ≤ x + Δx ≤ W
+                ? _A_[Δy + 2, Δx + 2, y + Δy, x + Δx][o, n] : 0.0f0
+                for Δy = -1:1, Δx = -1:1
+            ) + bc[o]
+            for n = 1:N, o = 1:Cout, y = 1:H, x = 1:W
+        ]
+    end
+
     # Pre-sampled random tensors
     # The diffusion model requires a random noise,
     # however, I want the whole tensor calculation deterministic
@@ -131,52 +179,9 @@ function main()::Nothing
         # \/
         # /\ n i y x
 
-        _X_s = eachslice(permutedims(latent, (2, 1, 3, 4)), dims=(3, 4))
-        # Matrix of matrices(↓)
-        #
-        # X[i=1 n=1] X[i=1 n=2] ...
-        # X[i=2 n=1] X[i=2 n=2]
-        # ...                   ...
-        #
-        # for each (y, x)
-        
-        # model.enc_wc1
-        #               Cout Cin η ξ
-    
-        _W_s = eachslice(model.enc_wc1, dims=(3, 4))
-        # Matrix of matrices(↓)
-        #
-        # W[o=1 i=1] W[o=1 i=2] ...
-        # W[o=2 i=1] W[o=2 i=2]
-        # ...                   ...
-        #
-        # for each (η, ξ)
+        conv = conv2d(model.enc_wc1, model.enc_bc1, latent)
 
-        _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:3, ξ = 1:3, y = 1:64, x = 1:64]
-        # 4D tensor of matrices(↓)
-        #
-        # A[o=1 n=1] A[o=1 n=2] ...
-        # A[o=2 n=1] A[o=2 n=2]
-        # ...                   ...
-        #
-        # for each (η, ξ, y, x)
-
-        conv = [
-            sum(
-                1 ≤ y + Δy ≤ 64 && 1 ≤ x + Δx ≤ 64
-                ? _A_[Δy + 2, Δx + 2, y + Δy, x + Δx][o, n] : 0.0f0
-                for Δy = -1:1, Δx = -1:1
-            ) + model.enc_bc1[o]
-            for n = 1:2, o = 1:320, y = 1:64, x = 1:64
-        ]
-
-        print("\x1b[91m")
-        show(IOContext(stdout, :limit => true), "text/plain", conv)
-        print("\x1b[39m")
-        println()
-
-        # Noticeably faster. It might not be optimal but it's enough.
-        
+       
         ####
 
         # conv
@@ -201,8 +206,10 @@ function main()::Nothing
         rrr = reshape(rr, (64, 64, 320, 2))
         =#
 
-        println("[conv]")
-        println(summary(conv))
+        print("\x1b[93m")
+        show(IOContext(stdout, :limit => true), "text/plain", conv)
+        print("\x1b[39m")
+        println()
 
         conv_mean = [
             mean(
@@ -211,9 +218,6 @@ function main()::Nothing
             )
             for n = 1:2, group = 0:31
         ]
-
-        println("[conv_mean]")
-        println(summary(conv_mean))
 
         conv_var = [
             var(
@@ -225,23 +229,31 @@ function main()::Nothing
             for n = 1:2, group = 0:31
         ]
 
-        println("[conv_var]")
-        println(summary(conv_var))
-
-        conv_gn = [
+        x = [
             (model.enc_gg1[o] * (conv[n, o, y, x] - conv_mean[n, (o - 1) ÷ 10 + 1]) / √(conv_var[n, (o - 1) ÷ 10 + 1] + 1f-5) + model.enc_tg1[o])
             # Ahh! enc_gg1 and enc_tg1 are VECTORS not scalars!
             for n = 1:2, o = 1:320, y = 1:64, x = 1:64
         ]
 
-        print("\x1b[92m")
-        show(IOContext(stdout, :limit => true), "text/plain", conv_gn)
+        print("\x1b[91m")
+        show(IOContext(stdout, :limit => true), "text/plain", x)
         print("\x1b[39m")
         println()
-        println(size(conv_gn))
-        println(summary(conv_gn))
-        println(conv_gn[2, 319, 64, 64])
-        
+
+        x = x ./ (exp.(-x) .+ 1)
+
+        print("\x1b[94m")
+        show(IOContext(stdout, :limit => true), "text/plain", x)
+        print("\x1b[39m")
+        println()
+
+        x = conv2d(model.enc_wc2, model.enc_bc2, x)
+
+        print("\x1b[92m")
+        show(IOContext(stdout, :limit => true), "text/plain", x)
+        print("\x1b[39m")
+        println()
+       
 
         #=
         model.enc_gg1
