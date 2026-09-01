@@ -200,6 +200,12 @@ function main()::Nothing
         g .* (x .- mean(x)) ./ √(var(x, corrected = false) + 1f-5) + t
     end
 
+    # Numerically stable softmax
+    function softmax(x::Vector{Float32})::Vector{Float32}
+        x = exp.(x .- maximum(x))
+        x / sum(x)
+    end
+
     # Pre-sampled random tensors
     # The diffusion model requires a random noise,
     # however, I want the whole tensor calculation deterministic
@@ -296,12 +302,6 @@ function main()::Nothing
         x = eachslice(x, dims=3)
         y = x
 
-        print("\x1b[93m")
-        println(size(x[1]))
-        show(IOContext(stdout, :limit => true), "text/plain", x[1])
-        print("\x1b[39m")
-        println()
-
         x = [
             begin
                 yy = [
@@ -312,11 +312,50 @@ function main()::Nothing
             end for y in x
         ]
         
+        # Self attention.
+        # Difference from the attention for GPT-2 or CLiP:
+        # - No bias on input projection. Only weight matrix.
+        # - No causal mask (that means I can't use KV-cache)
+
+        n_embd = 320
+        n_head = 40
+        size_head = n_embd ÷ n_head
+        x = [
+            begin
+                y = model.w_1_1_transformer_blocks_0_attn1 * y
+                q = y[1:n_embd, :]
+                k = y[(n_embd + 1):(2 * n_embd), :]
+                v = y[(2 * n_embd + 1):(3 * n_embd), :]
+                q
+            end
+            for y ∈ x
+        ]
+
         print("\x1b[92m")
         println(size(x[1]))
         show(IOContext(stdout, :limit => true), "text/plain", x[1])
         print("\x1b[39m")
         println()
+        
+        #=
+        x = [
+            begin
+                q = y[1:]
+            end
+            for y ∈ x
+        ]
+
+        chunks = Iterators.partition.(
+            Iterators.partition(x, n_embd),
+            model.n_embd ÷ model.n_head,
+        )
+        q = popfirst!(chunks)
+        k[:] = hcat.(k, popfirst!(chunks))
+        v[:] = hcat.(v, popfirst!(chunks))
+        # Scaled dot-product attention
+        a = v .* softmax.(transpose.(k) .* q ./ √Float32(model.n_embd ÷ model.n_head))
+        x = vcat(a...)
+        =#
         
         exit()
     end

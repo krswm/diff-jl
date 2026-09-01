@@ -77,6 +77,10 @@ struct Model
 
     g_1_1_transformer_blocks_0_norm1::Vector{Float32}
     t_1_1_transformer_blocks_0_norm1::Vector{Float32}
+
+    w_1_1_transformer_blocks_0_attn1::Matrix{Float32}
+    w_1_1_transformer_blocks_0_attn1_to_out_0::Matrix{Float32}
+    b_1_1_transformer_blocks_0_attn1_to_out_0::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -177,6 +181,18 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         "$prefix.1.1.transformer_blocks.0.norm1.bias"
     ]
 
+    w_1_1_transformer_blocks_0_attn1 = vcat(
+        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_q.weight"],
+        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_k.weight"],
+        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_v.weight"],
+    )
+    w_1_1_transformer_blocks_0_attn1_to_out_0 = (
+        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_out.0.weight"]
+    )
+    b_1_1_transformer_blocks_0_attn1_to_out_0 = (
+        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_out.0.bias"]
+    )
+
     Model(
         n_ctx,
         n_embd,
@@ -211,6 +227,9 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         bc_1_1_proj_in,
         g_1_1_transformer_blocks_0_norm1,
         t_1_1_transformer_blocks_0_norm1,
+        w_1_1_transformer_blocks_0_attn1,
+        w_1_1_transformer_blocks_0_attn1_to_out_0,
+        b_1_1_transformer_blocks_0_attn1_to_out_0,
     )
 end
 
