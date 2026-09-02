@@ -289,6 +289,14 @@ end
 latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
 
 #### ATTENTION BLOCK ####
+ 
+# Numerically stable softmax
+function softmax(x)
+    x = exp.(x .- maximum(x))
+    x / sum(x)
+end
+
+num_n, num_o, num_y, num_x = size(latent)
 
 x = latent
 x = groupnorm(model.g_1_1_norm, model.t_1_1_norm, 32, x)
@@ -297,7 +305,7 @@ x = conv2d(model.wc_1_1_proj_in, model.bc_1_1_proj_in, x) |> collect
 # n o y x -> x y o n -> xy o n -> n [xy o]
 # (Pytorch is row-major but Julia is column-major)
 x = permutedims(x, (4, 3, 2, 1))
-x = reshape(x, (64 * 64, 320, 2))
+x = reshape(x, (num_x * num_y, num_o, num_n))
 x = eachslice(x, dims=3)
 y = x
 
@@ -322,14 +330,8 @@ x = [
 # - No causal mask (that means I can't use KV-cache)
 
 
-# Numerically stable softmax
-function softmax(x)
-    x = exp.(x .- maximum(x))
-    x / sum(x)
-end
 
-
-n_embd = 320
+n_embd = num_o
 n_head = 8
 size_head = n_embd ÷ n_head
 x1 = [
@@ -348,60 +350,64 @@ x1 = [
     for y ∈ x
 ]
 
-x1[1][1]
-
 # %%
+
+num_xy = num_x * num_y
+
 # x1  # [n][head][ihead, xy]
-a1 = [x1[n][head][ihead, xy] for n=1:2, xy=1:4096, ihead=1:40, head=1:8]  # [n, xy, ihead, head]
-a2 = reshape(a1, (2, 4096, 320))  # [n, xy, o]
-a3 = (a2[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a1 = [x1[n][head][ihead, xy] for n=1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]  # [n, xy, ihead, head]
+a2 = reshape(a1, (num_n, num_xy, num_o))  # [n, xy, o]
+a3 = (a2[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
 a4 = Ref(model.w_1_1_transformer_blocks_0_attn1_to_out_0) .* a3 .+ Ref(model.b_1_1_transformer_blocks_0_attn1_to_out_0)  # [n, xy][o]
-x2 = [a4[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
+x2 = [a4[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
 
 # %%
-_y = (y[n][xy, o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
+_y = (y[n][xy, o] for n=1:num_n, xy=1:num_xy, o=1:num_o)  # [n, xy, o]
 x4 = _y .+ x2  # [n, xy, o]
 
 # %%
-a1 = (x4[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a1 = (x4[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
 a2 = layer_norm.(a1, Ref(model.g_1_1_transformer_blocks_0_norm2), Ref(model.t_1_1_transformer_blocks_0_norm2))  # [n, xy][o]
-x5 = [a2[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
+x5 = [a2[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
 
 # %%
 # Finally! Text prompt embedding
 c  # [embd, ctx, n]
-_c = [c[embd, ctx, n] for n=1:2, ctx=1:77, embd=1:768]  # [n, ctx, embd]
+
+num_embd, num_ctx, _ = size(c)
+
+_c = [c[embd, ctx, n] for n=1:num_n, ctx=1:num_ctx, embd=1:num_embd]  # [n, ctx, embd]
 ;
 
 # %%
-a = (x5[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a = (x5[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
 a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_q) .* a  # [n, xy][o]
-q_attn2 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
+q_attn2 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
 ;
 
 # %% [markdown]
 # Aha! `collect` consumes the generator and leaves nothing! Inter-cell generator is not safe.
 
 # %%
-a = (_c[n, ctx, :] for n=1:2, ctx=1:77)  # [n, ctx][embd]
+a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
 a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_k) .* a  # [n, ctx][o]
-k_attn2 = [a[n, ctx][o] for n=1:2, ctx=1:77, o=1:320]  # [n, ctx, o]
+k_attn2 = [a[n, ctx][o] for n=1:num_n, ctx=1:num_ctx, o=1:num_o]  # [n, ctx, o]
 ;
 
 # %%
-a = (_c[n, ctx, :] for n=1:2, ctx=1:77)  # [n, ctx][embd]
+a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
 a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_v) .* a  # [n, ctx][o]
-v_attn2 = [a[n, ctx][o] for n=1:2, ctx=1:77, o=1:320]  # [n, ctx, o]
+v_attn2 = [a[n, ctx][o] for n=1:num_n, ctx=1:num_ctx, o=1:num_o]  # [n, ctx, o]
 ;
 
 # %%
-q_attn2_r = reshape(q_attn2, (2, 4096, 40, 8))  # [n, xy, ihead, head]
-k_attn2_r = reshape(k_attn2, (2, 77, 40, 8))  # [n, ctx, ihead, head]
-v_attn2_r = reshape(v_attn2, (2, 77, 40, 8))  # [n, ctx, ihead, head]
+q_attn2_r = reshape(q_attn2, (num_n, num_xy,  size_head, n_head))  # [n, xy, ihead, head]
+k_attn2_r = reshape(k_attn2, (num_n, num_ctx, size_head, n_head))  # [n, ctx, ihead, head]
+v_attn2_r = reshape(v_attn2, (num_n, num_ctx, size_head, n_head))  # [n, ctx, ihead, head]
 ;
 
 # %%
-x7 = [k_attn2_r[n, :, :, head] * q_attn2_r[n, xy, :, head] / sqrt(40.0) for n=1:2, xy=1:4096, head=1:8]  # [n, xy, head][ctx]
+x7 = [k_attn2_r[n, :, :, head] * q_attn2_r[n, xy, :, head] / sqrt(Float32(size_head)) for n=1:num_n, xy=1:num_xy, head=1:n_head]  # [n, xy, head][ctx]
 ;
 
 # %%
@@ -409,18 +415,18 @@ x8 = softmax.(x7)  # [n, xy, head][ctx]
 ;
 
 # %%
-x9 = [v_attn2_r[n, :, :, head]' * x8[n, xy, head] for n=1:2, xy=1:4096, head=1:8]  # [n, xy, head][ihead]
+x9 = [v_attn2_r[n, :, :, head]' * x8[n, xy, head] for n=1:num_n, xy=1:num_xy, head=1:n_head]  # [n, xy, head][ihead]
 ;
 
 # %%
-a = [x9[n, xy, head][ihead] for n = 1:2, xy=1:4096, ihead=1:40, head=1:8]
-x10 = reshape(a, (2, 4096, 320))  # [n, xy, o]
-x11 = [x10[n, xy, :] for n=1:2, xy=1:4096]
+a = [x9[n, xy, head][ihead] for n = 1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]
+x10 = reshape(a, (num_n, num_xy, num_o))  # [n, xy, o]
+x11 = [x10[n, xy, :] for n=1:num_n, xy=1:num_xy]
 ;
 
 # %%
 a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_out_0) .* x11 .+ Ref(model.b_1_1_transformer_blocks_0_attn2_to_out_0)  # [n, xy][o]
-x12 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
+x12 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
 ;
 
 # %%
@@ -436,19 +442,19 @@ ugelu(u, v) = u .* (tanh.((v .^ 3 * 0.044715f0 + v) * sqrt(2.0f0 / pi)) .+ 1.0f0
 # `u` and `v` are vectors.
 
 # %%
-a = (x13[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a = (x13[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
 a = layer_norm.(a, Ref(model.g_1_1_transformer_blocks_0_norm3), Ref(model.t_1_1_transformer_blocks_0_norm3))  # [n, xy][o]
 a = Ref(model.w_geglu1) .* a .+ Ref(model.b_geglu1) #[n, xy][o8] (1 <= o8 <= 4 * 320 * 2)
-a = reshape.(a, Ref((4 * 320, 2)))  # [n, xy][o4, chunk]  (1 <= o4 <= 4 * 320, 1 <= chunk <= 2)
-b, c = ((a[n, xy][:, chunk] for n=1:2, xy=1:4096) for chunk=1:2)  # [n, xy][o4], [n, xy][o4]
+a = reshape.(a, Ref((4 * num_o, 2)))  # [n, xy][o4, chunk]  (1 <= o4 <= 4 * 320, 1 <= chunk <= 2)
+b, c = ((a[n, xy][:, chunk] for n=1:num_n, xy=1:num_xy) for chunk=1:num_n)  # [n, xy][o4], [n, xy][o4]
 d = ugelu.(b, c)  # [n, xy][o4]
 a = Ref(model.w_geglu2) .* d .+ Ref(model.b_geglu2)  # [n, xy][o]
-d = (a[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
+d = (a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o)  # [n, xy, o]
 d = x13 .+ d  # [n, xy, o]
 # `.` in `.+` is necessary when I add an `Array` and a `Generator` of same shape.
-d = [d[n, xy, o] for n=1:2, o=1:320, xy=1:4096]  # [n, o, xy]
-d = reshape(d, (2, 320, 64, 64))  # [n, o, x, y]
-a = [d[n, o, x, y] for n=1:2, o=1:320, y=1:64, x=1:64]  # [n, o, y, x]
+d = [d[n, xy, o] for n=1:num_n, o=1:num_o, xy=1:num_xy]  # [n, o, xy]
+d = reshape(d, (num_n, num_o, num_x, num_y))  # [n, o, x, y]
+a = [d[n, o, x, y] for n=1:num_n, o=1:num_o, y=1:num_y, x=1:num_x]  # [n, o, y, x]
 a = conv2d(model.wc_conv_out, model.bc_conv_out, a)  #[n, o, y, x]
 a = latent .+ a
 
