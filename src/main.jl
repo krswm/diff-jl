@@ -378,12 +378,29 @@ x2 = [
 ]
 
 x3 = [
-    x2[n, xy][o]
-    for n = 1:2, xy = 1:4096, o = 1:320
+    [
+        x2[n, xy][o]
+        for xy = 1:4096, o = 1:320
+    ]
+    for n = 1:2
 ]
 
 # I will need a ton of refactoring
 
 
+
+# %%
+x4 = x3 + y
+
+# %%
+x5 = [
+    begin
+        yy = [
+            layer_norm(collect(z), model.g_1_1_transformer_blocks_0_norm2, model.t_1_1_transformer_blocks_0_norm2)
+            for z in eachslice(y, dims=1)
+        ]
+        hcat(yy...)
+    end for y in x4
+]
 
 # %%
