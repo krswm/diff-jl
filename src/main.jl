@@ -79,6 +79,8 @@ ranks = begin
     ranks = Dict{Tuple{String,String},Int}()
     rank = 0
     for line ∈ readlines("$(ARGS1)/merges.txt")
+        global rank  # Temporary workaronud. I'll remove it when I wrap the code with `main` again.
+
         # Skip a comment line.
         if startswith(line, "#")
             continue
@@ -111,7 +113,7 @@ c = cat(positive_prompt_embedding, negative_prompt_embedding, dims = 3)
 
 # ====
 
-function conv2d(wc::Array{Float32, 4}, bc::Vector{Float32}, latent::Array{Float32, 4})::Array{Float32, 4}
+function conv2d(wc, bc, latent)
     # Kernel size 3x3, padding 1
 
     N, Cin, H, W = size(latent)
@@ -136,7 +138,8 @@ function conv2d(wc::Array{Float32, 4}, bc::Vector{Float32}, latent::Array{Float3
     # .OOO.
     # .....
 
-    _X_s = eachslice(permutedims(latent, (2, 1, 3, 4)), dims=(3, 4))
+    # latent [n, i, y, x]
+    _X_s = [[latent[n, i, y, x] for i=1:Cin, n=1:N] for y=1:H, x=1:W]  # [y, x][i, n]
     # Matrix of matrices(↓)
     #
     # X[i=1 n=1] X[i=1 n=2] ...
@@ -148,7 +151,8 @@ function conv2d(wc::Array{Float32, 4}, bc::Vector{Float32}, latent::Array{Float3
     # model.enc_wc1
     #               Cout Cin η ξ
 
-    _W_s = eachslice(wc, dims=(3, 4))
+    # wc [o, i, η, ξ]
+    _W_s = [wc[:, :, η, ξ] for η=1:HH, ξ=1:WW]
     # Matrix of matrices(↓)
     #
     # W[o=1 i=1] W[o=1 i=2] ...
@@ -157,7 +161,7 @@ function conv2d(wc::Array{Float32, 4}, bc::Vector{Float32}, latent::Array{Float3
     #
     # for each (η, ξ)
 
-    _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:HH, ξ = 1:WW, y = 1:H, x = 1:W]
+    _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:HH, ξ = 1:WW, y = 1:H, x = 1:W]  # [η, ξ, y, x][o, n]
     # 4D tensor of matrices(↓)
     #
     # A[o=1 n=1] A[o=1 n=2] ...
@@ -166,17 +170,23 @@ function conv2d(wc::Array{Float32, 4}, bc::Vector{Float32}, latent::Array{Float3
     #
     # for each (η, ξ, y, x)
 
-    [
+    # _A_ [η, ξ, y, x][o, n]
+    # sum_A_ [y, x, n][o]
+    # bc [o]
+
+    # [n, o, y, x]
+
+    (
         sum(
             1 ≤ y + Δy ≤ H && 1 ≤ x + Δx ≤ W
             ? _A_[Δy + kw + 1, Δx + kw + 1, y + Δy, x + Δx][o, n] : 0.0f0
             for Δy = -kw:kw, Δx = -kw:kw
         ) + bc[o]
         for n = 1:N, o = 1:Cout, y = 1:H, x = 1:W
-    ]
+    )  # [n, o, y, x]
 end
 
-function groupnorm(g::Vector{Float32}, t::Vector{Float32}, num_groups::Int, conv::Array{Float32, 4})::Array{Float32, 4}
+function groupnorm(g, t, num_groups, conv)
     N, C, H, W = size(conv)
     @assert C % num_groups == 0
     size_of_group = C ÷ num_groups
@@ -223,6 +233,8 @@ latent = rand42["l"]
 
 t = 900
 
+println("~~~~ A ~~~~")
+
 f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
 f = vcat(cos.(f), sin.(f))
 
@@ -243,7 +255,7 @@ latent = cat(latent, latent, dims = 1)
 # \/
 # /\ n i y x
 
-latent = conv2d(model.enc_wc1, model.enc_bc1, latent)
+latent = conv2d(model.enc_wc1, model.enc_bc1, latent) |> collect
 
 
 ####
@@ -274,7 +286,7 @@ x = groupnorm(model.enc_gg1, model.enc_tg1, 32, latent)
 
 x = x ./ (exp.(-x) .+ 1)
 
-x = conv2d(model.enc_wc2, model.enc_bc2, x)
+x = conv2d(model.enc_wc2, model.enc_bc2, x) |> collect
 
 f = f ./ (exp.(-f) .+ 1)
 
@@ -286,12 +298,12 @@ merged = [
 ]
 merged = groupnorm(model.g_1_0_out_layers_0, model.t_1_0_out_layers_0, 32, merged)
 merged = merged ./ (exp.(-merged) .+ 1)
-merged = conv2d(model.wc_1_0_out_layers_3, model.bc_1_0_out_layers_3, merged)
+merged = conv2d(model.wc_1_0_out_layers_3, model.bc_1_0_out_layers_3, merged) |> collect
 latent += merged
 
 x = latent
 x = groupnorm(model.g_1_1_norm, model.t_1_1_norm, 32, x)
-x = conv2d(model.wc_1_1_proj_in, model.bc_1_1_proj_in, x)
+x = conv2d(model.wc_1_1_proj_in, model.bc_1_1_proj_in, x) |> collect
 
 # n o y x -> x y o n -> xy o n -> n [xy o]
 # (Pytorch is row-major but Julia is column-major)
@@ -440,37 +452,27 @@ x13 = Float32.(x13)
 ;
 
 # %%
-a = (x13[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
-a = layer_norm.(a, Ref(model.g_1_1_transformer_blocks_0_norm3), Ref(model.t_1_1_transformer_blocks_0_norm3))  # [n, xy][o]
-x15 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
-;
-
-# %%
-a = (x15[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
-a = Ref(model.w_geglu1) .* a .+ Ref(model.b_geglu1) #[n, xy][o8] (1 <= o8 <= 4 * 320 * 2)
-a = reshape.(a, Ref((4 * 320, 2)))  # [n, xy][o4, chunk]  (1 <= o4 <= 4 * 320, 1 <= chunk <= 2)
-b, c = [[a[n, xy][:, chunk] for n=1:2, xy=1:4096] for chunk=1:2]  # [n, xy][o4], [n, xy][o4]
-;
-
-# %%
 ugelu(u, v) = u .* (tanh.((v .^ 3 * 0.044715f0 + v) * sqrt(2.0f0 / pi)) .+ 1.0f0) .* v .* 0.5f0
 # `u` and `v` are vectors.
 
 # %%
-a = ugelu.(b, c)  # [n, xy][o4]
-a = Ref(model.w_geglu2) .* a .+ Ref(model.b_geglu2)  # [n, xy][o]
+a = (x13[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a = layer_norm.(a, Ref(model.g_1_1_transformer_blocks_0_norm3), Ref(model.t_1_1_transformer_blocks_0_norm3))  # [n, xy][o]
+a = Ref(model.w_geglu1) .* a .+ Ref(model.b_geglu1) #[n, xy][o8] (1 <= o8 <= 4 * 320 * 2)
+a = reshape.(a, Ref((4 * 320, 2)))  # [n, xy][o4, chunk]  (1 <= o4 <= 4 * 320, 1 <= chunk <= 2)
+b, c = ((a[n, xy][:, chunk] for n=1:2, xy=1:4096) for chunk=1:2)  # [n, xy][o4], [n, xy][o4]
+d = ugelu.(b, c)  # [n, xy][o4]
+a = Ref(model.w_geglu2) .* d .+ Ref(model.b_geglu2)  # [n, xy][o]
 d = (a[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
 d = x13 .+ d  # [n, xy, o]
 # `.` in `.+` is necessary when I add an `Array` and a `Generator` of same shape.
 d = [d[n, xy, o] for n=1:2, o=1:320, xy=1:4096]  # [n, o, xy]
 d = reshape(d, (2, 320, 64, 64))  # [n, o, x, y]
-x16 = [d[n, o, x, y] for n=1:2, o=1:320, y=1:64, x=1:64]  # [n, o, y, x]
-;
+a = [d[n, o, x, y] for n=1:2, o=1:320, y=1:64, x=1:64]  # [n, o, y, x]
+a = conv2d(model.wc_conv_out, model.bc_conv_out, a)  #[n, o, y, x]
+a = latent .+ a
 
-# %%
-a = conv2d(model.wc_conv_out, model.bc_conv_out, x16)  #[n, o, y, x]
-a = latent + a
-;
+println(a[1, 1, 1, 1])
 
 # %% [markdown]
 # I finished implementing the residual block and the attention block. Yay!
