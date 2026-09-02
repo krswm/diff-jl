@@ -117,8 +117,11 @@ function conv2d(wc, bc, latent)
 
     N, Cin, H, W = size(latent)
 
-    Cout, Cin_, HH, WW = size(wc)
-    @assert Cin == Cin_ && HH == WW && HH % 2 == 1
+    Cin_, Cout, HH, WW = size(wc)
+    if !(Cin == Cin_ && HH == WW && HH % 2 == 1)
+        print(Cin, " ", Cin_, " ", HH, " ", WW)
+        @assert false
+    end
 
     kw = HH ÷ 2
     # kernelwidth = 0
@@ -234,19 +237,25 @@ end
 
 
 function calc_rblock(latent, f, rblock)
-    num_n, num_o, num_y, num_x = size(latent)
+    # latent [n, in, y, x]
+    num_n, num_in, num_y, num_x = size(latent)
+    num_out, = size(f)
 
-    x = groupnorm(rblock.g1, rblock.t1, 32, latent)  # [n, o, y, x]
-    x = x ./ (exp.(-x) .+ 1)  # [n, o, y, x]
-    x = conv2d(rblock.wc1, rblock.bc1, x) |> collect  # [n, o, y, x]
-    f = f ./ (exp.(-f) .+ 1)  # [o]
-    f = rblock.w * f + rblock.b  # [o]
-    _x_ = (x[n, :, y, x_] for n=1:num_n, y=1:num_y, x_=1:num_x)  # [n, y, x][o]
-    merged = Ref(f) .+ _x_  # [n, y, x][o]
-    merged = [merged[n, y, x][o] for n=1:num_n, o=1:num_o, y=1:num_y, x=1:num_x]  # [n, o, y, x]
-    merged = groupnorm(rblock.g2, rblock.t2, 32, merged)  # [n, o, y, x]
-    merged = merged ./ (exp.(-merged) .+ 1)  # [n, o, y, x]
-    merged = conv2d(rblock.wc2, rblock.bc2, merged)  # [n, o, y, x]
+    x = groupnorm(rblock.g1, rblock.t1, 32, latent)  # [n, in, y, x]
+    x = x ./ (exp.(-x) .+ 1)  # [n, in, y, x]
+    x = conv2d(rblock.wc1, rblock.bc1, x) |> collect  # [n, out, y, x]
+    f = f ./ (exp.(-f) .+ 1)  # [out]
+    f = rblock.w * f + rblock.b  # [out]
+    _x_ = (x[n, :, y, x_] for n=1:num_n, y=1:num_y, x_=1:num_x)  # [n, y, x][out]
+    merged = Ref(f) .+ _x_  # [n, y, x][out]
+    merged = [merged[n, y, x][out] for n=1:num_n, out=1:num_out, y=1:num_y, x=1:num_x]  # [n, out, y, x]
+    merged = groupnorm(rblock.g2, rblock.t2, 32, merged)  # [n, out, y, x]
+    merged = merged ./ (exp.(-merged) .+ 1)  # [n, out, y, x]
+    merged = conv2d(rblock.wc2, rblock.bc2, merged)  # [n, out, y, x]
+    if num_in == num_out
+        l = latent
+    else
+        
     latent .+ merged  # [n, o, y, x]
 end
 
@@ -423,19 +432,6 @@ latent = cat(latent, latent, dims = 1)
 ;
 
 # %%
-print("0.0 ")
-@time latent1 = conv2d(model.convs["model.diffusion_model.input_blocks.0.0"]..., latent) |> collect
-print("1.0 ")
-@time latent1 = calc_rblock(latent1, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
-print("1.1 ")
-@time latent1 = calc_ablock(latent1, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
-print("2.0 ")
-@time latent1 = calc_rblock(latent1, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
-print("2.1 ")
-@time latent1 = calc_ablock(latent1, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
-;
-
-# %%
 function conv2d_strided(wc, bc, latent)
     # Kernel size 3x3, padding 1
     # stride 2 pixels
@@ -511,5 +507,44 @@ function conv2d_strided(wc, bc, latent)
 end
 
 # %%
+x = latent
+
+print("0.0 ")
+@time x = conv2d(model.convs["model.diffusion_model.input_blocks.0.0"]..., x) |> collect
+print("1.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
+print("1.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
+print("2.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
+print("2.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
+
 print("3.0 ")
-@time latent2 = conv2d_strided(model.convs["model.diffusion_model.input_blocks.3.0.op"]..., latent1) |> collect
+@time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.3.0.op"]..., x) |> collect
+print("4.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.4.0"])
+print("4.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.4.1"])
+print("5.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.5.0"])
+print("5.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.5.1"])
+
+print("6.0 ")
+@time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.6.0.op"]..., x) |> collect
+print("7.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.7.0"])
+print("7.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.7.1"])
+print("8.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.8.0"])
+print("8.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.8.1"])
+
+print("9.0 ")
+@time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.9.0.op"]..., x) |> collect
+print("10.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.10.0"])
+print("11.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.11.0"])

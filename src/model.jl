@@ -174,7 +174,9 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         key => (tensors["$key.weight"], tensors["$key.bias"]) for key ∈ [
             "model.diffusion_model.input_blocks.0.0",
             "model.diffusion_model.input_blocks.3.0.op",
-        ]
+            "model.diffusion_model.input_blocks.6.0.op",
+            "model.diffusion_model.input_blocks.9.0.op",
+       ]
     )
 
     rblocks = Dict(
@@ -193,6 +195,12 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         end for key ∈ [
             "model.diffusion_model.input_blocks.1.0",
             "model.diffusion_model.input_blocks.2.0",
+            "model.diffusion_model.input_blocks.4.0",
+            "model.diffusion_model.input_blocks.5.0",
+            "model.diffusion_model.input_blocks.7.0",
+            "model.diffusion_model.input_blocks.8.0",
+            "model.diffusion_model.input_blocks.10.0",
+            "model.diffusion_model.input_blocks.11.0",
         ]
     )
 
@@ -239,6 +247,10 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         end for key ∈ [
             "model.diffusion_model.input_blocks.1.1",
             "model.diffusion_model.input_blocks.2.1",
+            "model.diffusion_model.input_blocks.4.1",
+            "model.diffusion_model.input_blocks.5.1",
+            "model.diffusion_model.input_blocks.7.1",
+            "model.diffusion_model.input_blocks.8.1",
         ]
     )
 
