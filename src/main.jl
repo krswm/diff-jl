@@ -258,17 +258,17 @@ end
 
 function calc_ablock(x, c, ablock)
     num_n, num_o, num_y, num_x = size(latent)
+    num_xy = num_x * num_y
 
-    x = latent
-    x = groupnorm(ablock.g1, ablock.t1, 32, x)
-    x = conv2d(ablock.wc1, ablock.bc1, x) |> collect
+    x = latent  # [n, o, y, x]
+    x = groupnorm(ablock.g1, ablock.t1, 32, x)  # [n, o, y, x]
+    x = conv2d(ablock.wc1, ablock.bc1, x) |> collect  # [n, o, y, x]
 
-    # n o y x -> x y o n -> xy o n -> n [xy o]
+    x = [x[n, o, y_, x_] for n=1:num_n, x_=1:num_x, y_=1:num_y, o=1:num_o]  # [n, x, y, o]
     # (Pytorch is row-major but Julia is column-major)
-    x = permutedims(x, (4, 3, 2, 1))
-    x = reshape(x, (num_x * num_y, num_o, num_n))
-    x = eachslice(x, dims=3)
-    y = x
+    x = reshape(x, (num_n, num_xy, num_o))  # [n, xy, o]
+    x = [x[n, :, :] for n=1:num_n]  # [xy, o][n]
+    y = x  # [xy, o][n]
 
     x = [
         begin
@@ -280,17 +280,10 @@ function calc_ablock(x, c, ablock)
         end for y in x
     ]
 
-    # %%
-    # n [xy o]
-
-
-
     # Self attention.
     # Difference from the attention for GPT-2 or CLiP:
     # - No bias on input projection. Only weight matrix.
     # - No causal mask (that means I can't use KV-cache)
-
-
 
     n_embd = num_o
     n_head = 8
@@ -311,10 +304,6 @@ function calc_ablock(x, c, ablock)
         for y ∈ x
     ]
 
-    # %%
-
-    num_xy = num_x * num_y
-
     # x1  # [n][head][ihead, xy]
     a1 = [x1[n][head][ihead, xy] for n=1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]  # [n, xy, ihead, head]
     a2 = reshape(a1, (num_n, num_xy, num_o))  # [n, xy, o]
@@ -331,8 +320,6 @@ function calc_ablock(x, c, ablock)
     a2 = layer_norm.(a1, Ref(ablock.g3), Ref(ablock.t3))  # [n, xy][o]
     x5 = [a2[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
 
-    # %%
-    # Finally! Text prompt embedding
     c  # [embd, ctx, n]
 
     num_embd, num_ctx, _ = size(c)
@@ -346,8 +333,6 @@ function calc_ablock(x, c, ablock)
     q_attn2 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
     ;
 
-    # %% [markdown]
-    # Aha! `collect` consumes the generator and leaves nothing! Inter-cell generator is not safe.
 
     # %%
     a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
@@ -456,10 +441,15 @@ latent = cat(latent, latent, dims = 1)
 # \/
 # /\ n i y x
 
+print("0.0 ")
 latent = conv2d(model.enc_wc1, model.enc_bc1, latent) |> collect
+print("1.0 ")
 latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
+print("1.1 ")
 latent = calc_ablock(latent, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
+print("2.0 ")
 latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
+print("2.1 ")
 latent = calc_ablock(latent, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
 
 
