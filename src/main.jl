@@ -205,11 +205,7 @@ function groupnorm(g::Vector{Float32}, t::Vector{Float32}, num_groups::Int, conv
     ]
 end
 
-function layer_norm(
-    x::Vector{Float32},
-    g::Vector{Float32},
-    t::Vector{Float32},
-)::Vector{Float32}
+function layer_norm(x, g, t)
     g .* (x .- mean(x)) ./ √(var(x, corrected = false) + 1f-5) + t
 end
 
@@ -404,3 +400,14 @@ x5 = [
 ]
 
 # %%
+x4 |> size
+x4[1] |> size
+
+# %%
+x5a = stack(x4; dims = 1)  # [n, xy, o]
+
+# %%
+a = (x5a[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a = layer_norm.(a, Ref(model.g_1_1_transformer_blocks_0_norm2), Ref(model.t_1_1_transformer_blocks_0_norm2))  # [n, xy][o]
+x5b = (a[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
+x5b |> collect
