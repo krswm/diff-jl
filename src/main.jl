@@ -362,8 +362,6 @@ x1[1][1]
 size_head
 
 # %%
-
-
 x2 = [
       model.w_1_1_transformer_blocks_0_attn1_to_out_0 * [
         x1[n][(o - 1) ÷ size_head + 1][(o - 1) % size_head + 1, xy]
@@ -373,41 +371,22 @@ x2 = [
     for n = 1:2, xy = 1:4096
 ]
 
-x3 = [
-    [
-        x2[n, xy][o]
-        for xy = 1:4096, o = 1:320
-    ]
-    for n = 1:2
-]
-
-# I will need a ton of refactoring
-
-
+# %%
 
 # %%
-x4 = x3 + y
+# x1  # [n][head][ihead, xy]
+a1 = [x1[n][head][ihead, xy] for n=1:2, xy=1:4096, ihead=1:40, head=1:8]  # [n, xy, ihead, head]
+a2 = reshape(a1, (2, 4096, 320))  # [n, xy, o]
+a3 = (a2[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a4 = Ref(model.w_1_1_transformer_blocks_0_attn1_to_out_0) .* a3 .+ Ref(model.b_1_1_transformer_blocks_0_attn1_to_out_0)  # [n, xy][o]
+x2 = (a4[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
 
 # %%
-x5 = [
-    begin
-        yy = [
-            layer_norm(collect(z), model.g_1_1_transformer_blocks_0_norm2, model.t_1_1_transformer_blocks_0_norm2)
-            for z in eachslice(y, dims=1)
-        ]
-        hcat(yy...)
-    end for y in x4
-]
+_y = (y[n][xy, o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
+x4 = _y .+ x2  # [n, xy, o]
 
 # %%
-x4 |> size
-x4[1] |> size
-
-# %%
-x5a = stack(x4; dims = 1)  # [n, xy, o]
-
-# %%
-a = (x5a[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
-a = layer_norm.(a, Ref(model.g_1_1_transformer_blocks_0_norm2), Ref(model.t_1_1_transformer_blocks_0_norm2))  # [n, xy][o]
-x5b = (a[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
-x5b |> collect
+a1 = (x4[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a2 = layer_norm.(a1, Ref(model.g_1_1_transformer_blocks_0_norm2), Ref(model.t_1_1_transformer_blocks_0_norm2))  # [n, xy][o]
+x5 = (a[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
+x5 |> collect
