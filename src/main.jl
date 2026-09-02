@@ -110,6 +110,7 @@ negative_ids = tokenize(token_to_id, ranks, model, ARGS4)
 positive_prompt_embedding = get_prompt_embedding(positive_ids, model)
 negative_prompt_embedding = get_prompt_embedding(negative_ids, model)
 c = cat(positive_prompt_embedding, negative_prompt_embedding, dims = 3)
+;
 
 # %%
 function conv2d(wc, bc, latent)
@@ -117,7 +118,7 @@ function conv2d(wc, bc, latent)
 
     N, Cin, H, W = size(latent)
 
-    Cin_, Cout, HH, WW = size(wc)
+    Cout, Cin_, HH, WW = size(wc)
     if !(Cin == Cin_ && HH == WW && HH % 2 == 1)
         print(Cin, " ", Cin_, " ", HH, " ", WW)
         @assert false
@@ -253,10 +254,11 @@ function calc_rblock(latent, f, rblock)
     merged = merged ./ (exp.(-merged) .+ 1)  # [n, out, y, x]
     merged = conv2d(rblock.wc2, rblock.bc2, merged)  # [n, out, y, x]
     if num_in == num_out
-        l = latent
-    else
-        
-    latent .+ merged  # [n, o, y, x]
+        l = latent  # [n, out, y, x]
+    else  # has_skip_connection = true
+        l = conv2d(rblock.wc3, rblock.bc3, latent)  # [n, out, y, x]
+    end
+    l .+ merged  # [n, out, y, x]
 end
 
 # %%

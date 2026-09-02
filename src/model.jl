@@ -46,6 +46,8 @@ struct ResidualBlock
     t2::Vector{Float32}
     wc2::Array{Float32, 4}
     bc2::Vector{Float32}
+    wc3::Array{Float32, 4}
+    bc3::Vector{Float32}
 end
 
 struct AttentionBlock
@@ -191,16 +193,24 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
             t2  = tensors["$key.out_layers.0.bias"]
             wc2 = tensors["$key.out_layers.3.weight"]
             bc2 = tensors["$key.out_layers.3.bias"]
-            ResidualBlock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2)
-        end for key ∈ [
-            "model.diffusion_model.input_blocks.1.0",
-            "model.diffusion_model.input_blocks.2.0",
-            "model.diffusion_model.input_blocks.4.0",
-            "model.diffusion_model.input_blocks.5.0",
-            "model.diffusion_model.input_blocks.7.0",
-            "model.diffusion_model.input_blocks.8.0",
-            "model.diffusion_model.input_blocks.10.0",
-            "model.diffusion_model.input_blocks.11.0",
+            if has_skip_connection
+                wc3 = tensors["$key.skip_connection.weight"]
+                bc3 = tensors["$key.skip_connection.bias"]
+            else
+                # Dummies
+                wc3 = zeros(0, 0, 0, 0)
+                bc3 = zeros(0)
+            end
+            ResidualBlock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2, wc3, bc3)
+        end for (key, has_skip_connection) ∈ [
+            ("model.diffusion_model.input_blocks.1.0",  false), 
+            ("model.diffusion_model.input_blocks.2.0",  false), 
+            ("model.diffusion_model.input_blocks.4.0",  true ), 
+            ("model.diffusion_model.input_blocks.5.0",  false), 
+            ("model.diffusion_model.input_blocks.7.0",  true ), 
+            ("model.diffusion_model.input_blocks.8.0",  false), 
+            ("model.diffusion_model.input_blocks.10.0", false), 
+            ("model.diffusion_model.input_blocks.11.0", false), 
         ]
     )
 
