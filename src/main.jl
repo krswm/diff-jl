@@ -428,4 +428,14 @@ x11 = [x10[n, xy, :] for n=1:2, xy=1:4096]
 
 # %%
 a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_out_0) .* x11 .+ Ref(model.b_1_1_transformer_blocks_0_attn2_to_out_0)  # [n, xy][o]
-x12 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]
+x12 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
+;
+
+# %%
+x13 = x4 + x12  # [n, xy, o]
+;
+
+# %%
+a = (x13[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a = layer_norm.(a, Ref(model.g_1_1_transformer_blocks_0_norm3), Ref(model.t_1_1_transformer_blocks_0_norm3))  # [n, xy][o]
+x15 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
