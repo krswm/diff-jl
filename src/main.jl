@@ -264,28 +264,60 @@ function calc_ablock(x, c, ablock)
     x = groupnorm(ablock.g1, ablock.t1, 32, x)  # [n, o, y, x]
     x = conv2d(ablock.wc1, ablock.bc1, x) |> collect  # [n, o, y, x]
 
-    @time x = permutedims(x, (1, 2, 4, 3))  # [n, o, x, y]
-    @time x = reshape(x, (num_n, num_o, num_xy))  # [n, o, xy]
-    @time x = eachslice(x; dims=(1, 3))  #[n, xy][o]
+    x = permutedims(x, (1, 2, 4, 3))  # [n, o, x, y]
+    x = reshape(x, (num_n, num_o, num_xy))  # [n, o, xy]
+    x = eachslice(x; dims=(1, 3))  #[n, xy][o]
     y = [[x[n, xy][o] for xy=1:num_xy, o=1:num_o] for n=1:num_n]  # [n][xy, o]
-    @time x = layer_norm.(x, Ref(ablock.g2), Ref(ablock.t2))  # [n, xy][o]
-    x = [[x[n, xy][o] for o=1:num_o, xy=1:num_xy] for n=1:num_n]  # [n][o, xy]
-    println("----")
+    x = layer_norm.(x, Ref(ablock.g2), Ref(ablock.t2))  # [n, xy][o]
+    
+    n_embd = num_o
+    n_head = 8
+    size_head = n_embd ÷ n_head
+
+    #=
+
+    @time x = [[x[n, xy][o] for o=1:num_o, xy=1:num_xy] for n=1:num_n]  # [n][o, xy]
+    # w21[qkv] [o, o]
+    @time qq = Ref(ablock.w21q) .* x  # [n][o, xy]
+    @time kk = Ref(ablock.w21k) .* x  # [n][o, xy]
+    @time vv = Ref(ablock.w21v) .* x  # [n][o, xy]
+    @time q = reshape.(qq, size_head, n_head, num_xy)  # [n][ihead, head, xy]
+    @time k = reshape.(kk, size_head, n_head, num_xy)  # [n][ihead, head, xy]
+    @time v = reshape.(vv, size_head, n_head, num_xy)  # [n][ihead, head, xy]
+    @time q = [q[n][ihead, :, :] for n=1:num_n, ihead=1:size_head]  # [n, ihead][head, xy]
+    @time k = [k[n][ihead, :, :] for n=1:num_n, ihead=1:size_head]  # [n, ihead][head, xy]
+    @time v = [v[n][ihead, :, :] for n=1:num_n, ihead=1:size_head]  # [n, ihead][head, xy]
+    @time kq = transpose.(k) .* q ./ √Float32(size_head)  # [n, ihead][xy1, xy]
+    kq |> summary |> println
+    kq[1, 1] |> summary |> println
+    @time kq = (kq[n, ihead][xy1, :] for n=1:num_n, ihead=1:size_head, xy1=1:num_xy)  # [n, ihead, xy1][xy]
+    kq |> summary |> println
+    kq[1, 1, 1] |> summary |> println
+    @time kqq = softmax.(kq)  # [n, ihead, xy1][xy]
+    kqq |> summary |> println
+    kqq[1, 1, 1] |> summary |> println
+    @time kqq = @views [[kqq[n, ihead, xy1][xy] for xy1=1:num_xy, xy=1:num_xy] for n=1:num_n, ihead=1:size_head]  # [n, ihead][xy1, xy]
+    @time x = v .* kqq  # [n, ihead][head, xy]
+
+    x |> size |> println
+    x[1, 1] |> size |> println
+    # x[1, 1][1, 1] |> println
+    exit(0)
+    =#
+    
+    @time x = [[x[n, xy][o] for o=1:num_o, xy=1:num_xy] for n=1:num_n]  # [n][o, xy]
 
     # Self attention.
     # Difference from the attention for GPT-2 or CLiP:
     # - No bias on input projection. Only weight matrix.
     # - No causal mask (that means I can't use KV-cache)
 
-    n_embd = num_o
-    n_head = 8
-    size_head = n_embd ÷ n_head
-    x1 = [
+    @time x1 = [
         begin
             y = ablock.w21 * y
-            qq = y[1:n_embd, :]
-            kk = y[(n_embd + 1):(2 * n_embd), :]
-            vv = y[(2 * n_embd + 1):(3 * n_embd), :]
+            qq = @view y[1:n_embd, :]
+            kk = @view y[(n_embd + 1):(2 * n_embd), :]
+            vv = @view y[(2 * n_embd + 1):(3 * n_embd), :]
             q = (qq[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
             k = (kk[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
             v = (vv[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
