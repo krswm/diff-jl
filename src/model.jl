@@ -96,9 +96,7 @@ struct Model
     time_w2::Matrix{Float32}
     time_b2::Vector{Float32}
 
-    enc_wc1::Array{Float32, 4}
-    enc_bc1::Vector{Float32}
-
+    convs::Dict{String, Tuple{Array{Float32, 4}, Vector{Float32}}}
     rblocks::Dict{String, ResidualBlock}
     ablocks::Dict{String, AttentionBlock}
 end
@@ -171,8 +169,13 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     time_b2 = tensors["$prefix.2.bias"]
 
     prefix = "model.diffusion_model.input_blocks"
-    enc_wc1 = tensors["$prefix.0.0.weight"]
-    enc_bc1 = tensors["$prefix.0.0.bias"]
+
+    convs = Dict(
+        key => (tensors["$key.weight"], tensors["$key.bias"]) for key ∈ [
+            "model.diffusion_model.input_blocks.0.0",
+            "model.diffusion_model.input_blocks.3.0.op",
+        ]
+    )
 
     rblocks = Dict(
         key => begin
@@ -255,8 +258,7 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         time_b1,
         time_w2,
         time_b2,
-        enc_wc1,
-        enc_bc1,
+        convs,
         rblocks,
         ablocks,
     )

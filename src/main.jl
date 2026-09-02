@@ -111,8 +111,7 @@ positive_prompt_embedding = get_prompt_embedding(positive_ids, model)
 negative_prompt_embedding = get_prompt_embedding(negative_ids, model)
 c = cat(positive_prompt_embedding, negative_prompt_embedding, dims = 3)
 
-# ====
-
+# %%
 function conv2d(wc, bc, latent)
     # Kernel size 3x3, padding 1
 
@@ -186,6 +185,7 @@ function conv2d(wc, bc, latent)
     )  # [n, o, y, x]
 end
 
+# %%
 function groupnorm(g, t, num_groups, conv)
     N, C, H, W = size(conv)
     @assert C % num_groups == 0
@@ -215,10 +215,12 @@ function groupnorm(g, t, num_groups, conv)
     ]
 end
 
+# %%
 function layer_norm(x, g, t)
     g .* (x .- mean(x)) ./ √(var(x, corrected = false) + 1f-5) + t
 end
 
+# %%
 #### RESIDUAL BLOCK ####
 
 ####
@@ -248,6 +250,7 @@ function calc_rblock(latent, f, rblock)
     latent .+ merged  # [n, o, y, x]
 end
 
+# %%
 #### ATTENTION BLOCK ####
  
 # Numerically stable softmax
@@ -257,20 +260,19 @@ function softmax(x)
 end
 
 function calc_ablock(x, c, ablock)
-    num_n, num_o, num_y, num_x = size(latent)
+    num_n, num_o, num_y, num_x = size(x)
     num_xy = num_x * num_y
 
-    x = latent  # [n, o, y, x]
+    latent_ = x  # [n, o, y, x]
     x = groupnorm(ablock.g1, ablock.t1, 32, x)  # [n, o, y, x]
     x = conv2d(ablock.wc1, ablock.bc1, x) |> collect  # [n, o, y, x]
 
-    @time x = permutedims(x, (1, 2, 4, 3))  # [n, o, x, y]
-    @time x = reshape(x, (num_n, num_o, num_xy))  # [n, o, xy]
-    @time x = eachslice(x; dims=(1, 3))  #[n, xy][o]
+    x = permutedims(x, (1, 2, 4, 3))  # [n, o, x, y]
+    x = reshape(x, (num_n, num_o, num_xy))  # [n, o, xy]
+    x = eachslice(x; dims=(1, 3))  #[n, xy][o]
     y = [[x[n, xy][o] for xy=1:num_xy, o=1:num_o] for n=1:num_n]  # [n][xy, o]
-    @time x = layer_norm.(x, Ref(ablock.g2), Ref(ablock.t2))  # [n, xy][o]
+    x = layer_norm.(x, Ref(ablock.g2), Ref(ablock.t2))  # [n, xy][o]
     x = [[x[n, xy][o] for o=1:num_o, xy=1:num_xy] for n=1:num_n]  # [n][o, xy]
-    println("----")
 
     # Self attention.
     # Difference from the attention for GPT-2 or CLiP:
@@ -303,11 +305,9 @@ function calc_ablock(x, c, ablock)
     a4 = Ref(ablock.w22) .* a3 .+ Ref(ablock.b22)  # [n, xy][o]
     x2 = [a4[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
 
-    # %%
     _y = (y[n][xy, o] for n=1:num_n, xy=1:num_xy, o=1:num_o)  # [n, xy, o]
     x4 = _y .+ x2  # [n, xy, o]
 
-    # %%
     a1 = (x4[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
     a2 = layer_norm.(a1, Ref(ablock.g3), Ref(ablock.t3))  # [n, xy][o]
     x5 = [a2[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
@@ -319,67 +319,54 @@ function calc_ablock(x, c, ablock)
     _c = [c[embd, ctx, n] for n=1:num_n, ctx=1:num_ctx, embd=1:num_embd]  # [n, ctx, embd]
     ;
 
-    # %%
     a = (x5[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
     a = Ref(ablock.w31q) .* a  # [n, xy][o]
     q_attn2 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
     ;
 
 
-    # %%
     a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
     a = Ref(ablock.w31k) .* a  # [n, ctx][o]
     k_attn2 = [a[n, ctx][o] for n=1:num_n, ctx=1:num_ctx, o=1:num_o]  # [n, ctx, o]
     ;
 
-    # %%
     a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
     a = Ref(ablock.w31v) .* a  # [n, ctx][o]
     v_attn2 = [a[n, ctx][o] for n=1:num_n, ctx=1:num_ctx, o=1:num_o]  # [n, ctx, o]
     ;
 
-    # %%
     q_attn2_r = reshape(q_attn2, (num_n, num_xy,  size_head, n_head))  # [n, xy, ihead, head]
     k_attn2_r = reshape(k_attn2, (num_n, num_ctx, size_head, n_head))  # [n, ctx, ihead, head]
     v_attn2_r = reshape(v_attn2, (num_n, num_ctx, size_head, n_head))  # [n, ctx, ihead, head]
     ;
 
-    # %%
     x7 = [k_attn2_r[n, :, :, head] * q_attn2_r[n, xy, :, head] / sqrt(Float32(size_head)) for n=1:num_n, xy=1:num_xy, head=1:n_head]  # [n, xy, head][ctx]
     ;
 
-    # %%
     x8 = softmax.(x7)  # [n, xy, head][ctx]
     ;
 
-    # %%
     x9 = [v_attn2_r[n, :, :, head]' * x8[n, xy, head] for n=1:num_n, xy=1:num_xy, head=1:n_head]  # [n, xy, head][ihead]
     ;
 
-    # %%
     a = [x9[n, xy, head][ihead] for n = 1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]
     x10 = reshape(a, (num_n, num_xy, num_o))  # [n, xy, o]
     x11 = [x10[n, xy, :] for n=1:num_n, xy=1:num_xy]
     ;
 
-    # %%
     a = Ref(ablock.w32) .* x11 .+ Ref(ablock.b32)  # [n, xy][o]
     x12 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
     ;
 
-    # %%
     x13 = x4 + x12  # [n, xy, o]
     ;
 
-    # %%
     x13 = Float32.(x13)
     ;
 
-    # %%
     ugelu(u, v) = u .* (tanh.((v .^ 3 * 0.044715f0 + v) * sqrt(2.0f0 / pi)) .+ 1.0f0) .* v .* 0.5f0
     # `u` and `v` are vectors.
 
-    # %%
     a = (x13[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
     a = layer_norm.(a, Ref(ablock.g4), Ref(ablock.t4))  # [n, xy][o]
     a = Ref(ablock.w41) .* a .+ Ref(ablock.b41) #[n, xy][o8] (1 <= o8 <= 4 * 320 * 2)
@@ -394,9 +381,10 @@ function calc_ablock(x, c, ablock)
     d = reshape(d, (num_n, num_o, num_x, num_y))  # [n, o, x, y]
     a = [d[n, o, x, y] for n=1:num_n, o=1:num_o, y=1:num_y, x=1:num_x]  # [n, o, y, x]
     a = conv2d(ablock.wc4, ablock.bc4, a)  #[n, o, y, x]
-    latent .+ a
+    latent_ .+ a
 end
 
+# %%
 # Pre-sampled random tensors
 # The diffusion model requires a random noise,
 # however, I want the whole tensor calculation deterministic
@@ -432,23 +420,96 @@ f = model.time_w2 * f + model.time_b2
 latent = cat(latent, latent, dims = 1)
 # \/
 # /\ n i y x
+;
 
+# %%
 print("0.0 ")
-latent = conv2d(model.enc_wc1, model.enc_bc1, latent) |> collect
+@time latent1 = conv2d(model.convs["model.diffusion_model.input_blocks.0.0"]..., latent) |> collect
 print("1.0 ")
-latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
+@time latent1 = calc_rblock(latent1, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
 print("1.1 ")
-latent = calc_ablock(latent, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
-print(latent[1, 1, 1, 1])
-exit(0)
+@time latent1 = calc_ablock(latent1, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
 print("2.0 ")
-latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
+@time latent1 = calc_rblock(latent1, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
 print("2.1 ")
-latent = calc_ablock(latent, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
+@time latent1 = calc_ablock(latent1, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
+;
 
+# %%
+function conv2d_strided(wc, bc, latent)
+    # Kernel size 3x3, padding 1
+    # stride 2 pixels
 
-show(IOContext(stdout, :limit => true), "text/plain", latent)
-# Correct result!
+    N, Cin, H, W = size(latent)
 
-# %% [markdown]
-# I finished implementing the residual block and the attention block. Yay!
+    Cout, Cin_, HH, WW = size(wc)
+    @assert Cin == Cin_ && HH == WW && HH % 2 == 1
+
+    kw = HH ÷ 2
+    # kernelwidth = 0
+    #
+    # .....
+    # .....
+    # ..O..
+    # .....
+    # .....
+    #
+    # kernelwidth = 1
+    #
+    # .....
+    # .OOO.
+    # .OOO.
+    # .OOO.
+    # .....
+
+    # latent [n, i, y, x]
+    _X_s = [[latent[n, i, y, x] for i=1:Cin, n=1:N] for y=1:H, x=1:W]  # [y, x][i, n]
+    # Matrix of matrices(↓)
+    #
+    # X[i=1 n=1] X[i=1 n=2] ...
+    # X[i=2 n=1] X[i=2 n=2]
+    # ...                   ...
+    #
+    # for each (y, x)
+    
+    # model.enc_wc1
+    #               Cout Cin η ξ
+
+    # wc [o, i, η, ξ]
+    _W_s = [wc[:, :, η, ξ] for η=1:HH, ξ=1:WW]
+    # Matrix of matrices(↓)
+    #
+    # W[o=1 i=1] W[o=1 i=2] ...
+    # W[o=2 i=1] W[o=2 i=2]
+    # ...                   ...
+    #
+    # for each (η, ξ)
+
+    _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:HH, ξ = 1:WW, y = 1:H, x = 1:W]  # [η, ξ, y, x][o, n]
+    # 4D tensor of matrices(↓)
+    #
+    # A[o=1 n=1] A[o=1 n=2] ...
+    # A[o=2 n=1] A[o=2 n=2]
+    # ...                   ...
+    #
+    # for each (η, ξ, y, x)
+
+    # _A_ [η, ξ, y, x][o, n]
+    # sum_A_ [y, x, n][o]
+    # bc [o]
+
+    # [n, o, y, x]
+
+    (
+        sum(
+            1 ≤ y + Δy ≤ H && 1 ≤ x + Δx ≤ W
+            ? _A_[Δy + kw + 1, Δx + kw + 1, y + Δy, x + Δx][o, n] : 0.0f0
+            for Δy = -kw:kw, Δx = -kw:kw
+        ) + bc[o]
+        for n = 1:N, o = 1:Cout, y = 1:2:H, x = 1:2:W  # <- The only difference from `conv2d` is here!
+    )  # [n, o, y, x]
+end
+
+# %%
+print("3.0 ")
+@time latent2 = conv2d_strided(model.convs["model.diffusion_model.input_blocks.3.0.op"]..., latent1) |> collect
