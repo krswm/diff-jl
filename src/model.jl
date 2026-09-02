@@ -93,6 +93,14 @@ struct Model
 
     g_1_1_transformer_blocks_0_norm3::Vector{Float32}
     t_1_1_transformer_blocks_0_norm3::Vector{Float32}
+
+    # Let me switch back to use short names!
+    w_geglu1::Matrix{Float32}
+    b_geglu1::Vector{Float32}
+    w_geglu2::Matrix{Float32}
+    b_geglu2::Vector{Float32}
+    wc_conv_out::Array{Float32, 4}
+    bc_conv_out::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -226,6 +234,13 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         "$prefix.1.1.transformer_blocks.0.norm3.bias"
     ]
 
+    w_geglu1    = tensors["$prefix.1.1.transformer_blocks.0.ff.net.0.proj.weight"]
+    b_geglu1    = tensors["$prefix.1.1.transformer_blocks.0.ff.net.0.proj.bias"]
+    w_geglu2    = tensors["$prefix.1.1.transformer_blocks.0.ff.net.2.weight"]
+    b_geglu2    = tensors["$prefix.1.1.transformer_blocks.0.ff.net.2.bias"]
+    wc_convout = tensors["$prefix.1.1.proj_out.weight"]
+    bc_convout = tensors["$prefix.1.1.proj_out.bias"]
+
     Model(
         n_ctx,
         n_embd,
@@ -272,6 +287,12 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         b_1_1_transformer_blocks_0_attn2_to_out_0,
         g_1_1_transformer_blocks_0_norm3,
         t_1_1_transformer_blocks_0_norm3,
+        w_geglu1,
+        b_geglu1,
+        w_geglu2,
+        b_geglu2,
+        wc_convout,
+        bc_convout,
     )
 end
 

@@ -436,6 +436,41 @@ x13 = x4 + x12  # [n, xy, o]
 ;
 
 # %%
+x13 = Float32.(x13)
+;
+
+# %%
 a = (x13[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
 a = layer_norm.(a, Ref(model.g_1_1_transformer_blocks_0_norm3), Ref(model.t_1_1_transformer_blocks_0_norm3))  # [n, xy][o]
 x15 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
+;
+
+# %%
+a = (x15[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a = Ref(model.w_geglu1) .* a .+ Ref(model.b_geglu1) #[n, xy][o8] (1 <= o8 <= 4 * 320 * 2)
+a = reshape.(a, Ref((4 * 320, 2)))  # [n, xy][o4, chunk]  (1 <= o4 <= 4 * 320, 1 <= chunk <= 2)
+b, c = [[a[n, xy][:, chunk] for n=1:2, xy=1:4096] for chunk=1:2]  # [n, xy][o4], [n, xy][o4]
+;
+
+# %%
+ugelu(u, v) = u .* (tanh.((v .^ 3 * 0.044715f0 + v) * sqrt(2.0f0 / pi)) .+ 1.0f0) .* v .* 0.5f0
+# `u` and `v` are vectors.
+
+# %%
+a = ugelu.(b, c)  # [n, xy][o4]
+a = Ref(model.w_geglu2) .* a .+ Ref(model.b_geglu2)  # [n, xy][o]
+d = (a[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
+d = x13 .+ d  # [n, xy, o]
+# `.` in `.+` is necessary when I add an `Array` and a `Generator` of same shape.
+d = [d[n, xy, o] for n=1:2, o=1:320, xy=1:4096]  # [n, o, xy]
+d = reshape(d, (2, 320, 64, 64))  # [n, o, x, y]
+x16 = [d[n, o, x, y] for n=1:2, o=1:320, y=1:64, x=1:64]  # [n, o, y, x]
+;
+
+# %%
+a = conv2d(model.wc_conv_out, model.bc_conv_out, x16)  #[n, o, y, x]
+a = latent + a
+;
+
+# %% [markdown]
+# I finished implementing the residual block and the attention block. Yay!
