@@ -264,21 +264,13 @@ function calc_ablock(x, c, ablock)
     x = groupnorm(ablock.g1, ablock.t1, 32, x)  # [n, o, y, x]
     x = conv2d(ablock.wc1, ablock.bc1, x) |> collect  # [n, o, y, x]
 
-    x = [x[n, o, y_, x_] for n=1:num_n, x_=1:num_x, y_=1:num_y, o=1:num_o]  # [n, x, y, o]
-    # (Pytorch is row-major but Julia is column-major)
-    x = reshape(x, (num_n, num_xy, num_o))  # [n, xy, o]
-    x = [x[n, :, :] for n=1:num_n]  # [xy, o][n]
-    y = x  # [xy, o][n]
-
-    x = [
-        begin
-            yy = [
-                layer_norm(collect(z), ablock.g2, ablock.t2)
-                for z in eachslice(y, dims=1)
-            ]
-            hcat(yy...)
-        end for y in x
-    ]
+    @time x = permutedims(x, (1, 2, 4, 3))  # [n, o, x, y]
+    @time x = reshape(x, (num_n, num_o, num_xy))  # [n, o, xy]
+    @time x = eachslice(x; dims=(1, 3))  #[n, xy][o]
+    y = [[x[n, xy][o] for xy=1:num_xy, o=1:num_o] for n=1:num_n]  # [n][xy, o]
+    @time x = layer_norm.(x, Ref(ablock.g2), Ref(ablock.t2))  # [n, xy][o]
+    x = [[x[n, xy][o] for o=1:num_o, xy=1:num_xy] for n=1:num_n]  # [n][o, xy]
+    println("----")
 
     # Self attention.
     # Difference from the attention for GPT-2 or CLiP:
@@ -447,6 +439,8 @@ print("1.0 ")
 latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
 print("1.1 ")
 latent = calc_ablock(latent, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
+print(latent[1, 1, 1, 1])
+exit(0)
 print("2.0 ")
 latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
 print("2.1 ")
