@@ -257,6 +257,7 @@ latent = cat(latent, latent, dims = 1)
 
 latent = conv2d(model.enc_wc1, model.enc_bc1, latent) |> collect
 
+#### RESIDUAL BLOCK ####
 
 ####
 
@@ -268,38 +269,26 @@ latent = conv2d(model.enc_wc1, model.enc_bc1, latent) |> collect
 # - x (x axis)  1 ≤ x ≤ 64
 
 
-#=
-r = reshape(conv, (64 * 64 * 10, 32 * 2))
+function calc_rblock(latent, f, rblock)
+    num_n, num_o, num_y, num_x = size(latent)
 
-rr = [
-    model.enc_gg1 .* (r[:, gn] .- mean(r[:, gn])) ./ √(var(r[:, gn], corrected = false) + 1f-5) + model.enc_tg1
-    for gn = 1:(32 * 2)
-]
+    x = groupnorm(rblock.g1, rblock.t1, 32, latent)  # [n, o, y, x]
+    x = x ./ (exp.(-x) .+ 1)  # [n, o, y, x]
+    x = conv2d(rblock.wc1, rblock.bc1, x) |> collect  # [n, o, y, x]
+    f = f ./ (exp.(-f) .+ 1)  # [o]
+    f = rblock.w * f + rblock.b  # [o]
+    _x_ = (x[n, :, y, x_] for n=1:num_n, y=1:num_y, x_=1:num_x)  # [n, y, x][o]
+    merged = Ref(f) .+ _x_  # [n, y, x][o]
+    merged = [merged[n, y, x][o] for n=1:num_n, o=1:num_o, y=1:num_y, x=1:num_x]  # [n, o, y, x]
+    merged = groupnorm(rblock.g2, rblock.t2, 32, merged)  # [n, o, y, x]
+    merged = merged ./ (exp.(-merged) .+ 1)  # [n, o, y, x]
+    merged = conv2d(rblock.wc2, rblock.bc2, merged)  # [n, o, y, x]
+    latent .+ merged  # [n, o, y, x]
+end
 
-rr |> size |> println
-rr[1] |> size |> println
+latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
 
-rrr = reshape(rr, (64, 64, 320, 2))
-=#
-
-x = groupnorm(model.enc_gg1, model.enc_tg1, 32, latent)
-
-x = x ./ (exp.(-x) .+ 1)
-
-x = conv2d(model.enc_wc2, model.enc_bc2, x) |> collect
-
-f = f ./ (exp.(-f) .+ 1)
-
-f = model.enc_time_w1 * f + model.enc_time_b1
-
-merged = [
-    x[n, o, y, x_] + f[o]
-    for n = 1:2, o = 1:320, y = 1:64, x_ = 1:64
-]
-merged = groupnorm(model.g_1_0_out_layers_0, model.t_1_0_out_layers_0, 32, merged)
-merged = merged ./ (exp.(-merged) .+ 1)
-merged = conv2d(model.wc_1_0_out_layers_3, model.bc_1_0_out_layers_3, merged) |> collect
-latent += merged
+#### ATTENTION BLOCK ####
 
 x = latent
 x = groupnorm(model.g_1_1_norm, model.t_1_1_norm, 32, x)
@@ -321,15 +310,6 @@ x = [
         hcat(yy...)
     end for y in x
 ]
-
-x[1]
-
-# %%
-
-# %%
-
-# %%
-"hello!"
 
 # %%
 # n [xy o]

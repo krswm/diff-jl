@@ -35,6 +35,19 @@ struct Layer
     b22::Vector{Float32}
 end
 
+struct ResidualBlock
+    g1::Vector{Float32}
+    t1::Vector{Float32}
+    wc1::Array{Float32, 4}
+    bc1::Vector{Float32}
+    w::Matrix{Float32}
+    b::Vector{Float32}
+    g2::Vector{Float32}
+    t2::Vector{Float32}
+    wc2::Array{Float32, 4}
+    bc2::Vector{Float32}
+end
+
 struct Model
     n_ctx::Int
     n_embd::Int
@@ -56,19 +69,7 @@ struct Model
     enc_wc1::Array{Float32, 4}
     enc_bc1::Vector{Float32}
 
-    enc_gg1::Vector{Float32}
-    enc_tg1::Vector{Float32}
-
-    enc_wc2::Array{Float32, 4}
-    enc_bc2::Vector{Float32}
-
-    enc_time_w1::Matrix{Float32}
-    enc_time_b1::Vector{Float32}
-
-    g_1_0_out_layers_0::Vector{Float32}
-    t_1_0_out_layers_0::Vector{Float32}
-    wc_1_0_out_layers_3::Array{Float32, 4}
-    bc_1_0_out_layers_3::Vector{Float32}
+    rblocks::Dict{String, ResidualBlock}
 
     g_1_1_norm::Vector{Float32}
     t_1_1_norm::Vector{Float32}
@@ -174,20 +175,21 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     enc_wc1 = tensors["$prefix.0.0.weight"]
     enc_bc1 = tensors["$prefix.0.0.bias"]
 
-    enc_gg1 = tensors["$prefix.1.0.in_layers.0.weight"]
-    enc_tg1 = tensors["$prefix.1.0.in_layers.0.bias"]
-
-    enc_wc2 = tensors["$prefix.1.0.in_layers.2.weight"]
-    enc_bc2 = tensors["$prefix.1.0.in_layers.2.bias"]
-
-    enc_time_w1 = tensors["$prefix.1.0.emb_layers.1.weight"]
-    enc_time_b1 = tensors["$prefix.1.0.emb_layers.1.bias"]
-
-    g_1_0_out_layers_0 = tensors["$prefix.1.0.out_layers.0.weight"]
-    t_1_0_out_layers_0 = tensors["$prefix.1.0.out_layers.0.bias"]
-    wc_1_0_out_layers_3 = tensors["$prefix.1.0.out_layers.3.weight"]
-    bc_1_0_out_layers_3 = tensors["$prefix.1.0.out_layers.3.bias"]
-
+    rblocks = Dict(
+        key => begin
+            g1  = tensors["$key.in_layers.0.weight"]
+            t1  = tensors["$key.in_layers.0.bias"]
+            wc1 = tensors["$key.in_layers.2.weight"]
+            bc1 = tensors["$key.in_layers.2.bias"]
+            w   = tensors["$key.emb_layers.1.weight"]
+            b   = tensors["$key.emb_layers.1.bias"]
+            g2  = tensors["$key.out_layers.0.weight"]
+            t2  = tensors["$key.out_layers.0.bias"]
+            wc2 = tensors["$key.out_layers.3.weight"]
+            bc2 = tensors["$key.out_layers.3.bias"]
+            ResidualBlock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2)
+        end for key ∈ ["model.diffusion_model.input_blocks.1.0"]
+    )
 
     g_1_1_norm = tensors["$prefix.1.1.norm.weight"]
     t_1_1_norm = tensors["$prefix.1.1.norm.bias"]
@@ -259,16 +261,7 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         time_b2,
         enc_wc1,
         enc_bc1,
-        enc_gg1,
-        enc_tg1,
-        enc_wc2,
-        enc_bc2,
-        enc_time_w1,
-        enc_time_b1,
-        g_1_0_out_layers_0,
-        t_1_0_out_layers_0,
-        wc_1_0_out_layers_3,
-        bc_1_0_out_layers_3,
+        rblocks,
         g_1_1_norm,
         t_1_1_norm,
         wc_1_1_proj_in,
