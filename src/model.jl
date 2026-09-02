@@ -57,9 +57,6 @@ struct AttentionBlock
     g2::Vector{Float32}
     t2::Vector{Float32}
     w21::Matrix{Float32}
-    w21q::Matrix{Float32}
-    w21k::Matrix{Float32}
-    w21v::Matrix{Float32}
     w22::Matrix{Float32}
     b22::Vector{Float32}
 
@@ -210,9 +207,6 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
                 tensors["$key.transformer_blocks.0.attn1.to_k.weight"],
                 tensors["$key.transformer_blocks.0.attn1.to_v.weight"],
             )
-            w21q = tensors["$key.transformer_blocks.0.attn1.to_q.weight"]
-            w21k = tensors["$key.transformer_blocks.0.attn1.to_k.weight"]
-            w21v = tensors["$key.transformer_blocks.0.attn1.to_v.weight"]
             w22  = tensors["$key.transformer_blocks.0.attn1.to_out.0.weight"]
             b22  = tensors["$key.transformer_blocks.0.attn1.to_out.0.bias"]
 
@@ -235,7 +229,7 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
 
             AttentionBlock(
                 g1, t1, wc1, bc1,
-                g2, t2, w21, w21q, w21k, w21v, w22, b22,
+                g2, t2, w21, w22, b22,
                 g3, t3, w31q, w31k, w31v, w32, b32,
                 g4, t4, w41, b41, w42, b42, wc4, bc4,
             )
