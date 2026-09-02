@@ -84,6 +84,12 @@ struct Model
 
     g_1_1_transformer_blocks_0_norm2::Vector{Float32}
     t_1_1_transformer_blocks_0_norm2::Vector{Float32}
+
+    w_1_1_transformer_blocks_0_attn2_to_q::Matrix{Float32}
+    w_1_1_transformer_blocks_0_attn2_to_k::Matrix{Float32}
+    w_1_1_transformer_blocks_0_attn2_to_v::Matrix{Float32}
+    w_1_1_transformer_blocks_0_attn2_to_out_0::Matrix{Float32}
+    b_1_1_transformer_blocks_0_attn2_to_out_0::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -203,6 +209,13 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         "$prefix.1.1.transformer_blocks.0.norm2.bias"
     ]
 
+    
+    w_1_1_transformer_blocks_0_attn2_to_q     = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_q.weight"]
+    w_1_1_transformer_blocks_0_attn2_to_k     = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_k.weight"]
+    w_1_1_transformer_blocks_0_attn2_to_v     = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_v.weight"]
+    w_1_1_transformer_blocks_0_attn2_to_out_0 = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_out.0.weight"] 
+    b_1_1_transformer_blocks_0_attn2_to_out_0 = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_out.0.bias"] 
+
     Model(
         n_ctx,
         n_embd,
@@ -242,6 +255,11 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         b_1_1_transformer_blocks_0_attn1_to_out_0,
         g_1_1_transformer_blocks_0_norm2,
         t_1_1_transformer_blocks_0_norm2,
+        w_1_1_transformer_blocks_0_attn2_to_q,
+        w_1_1_transformer_blocks_0_attn2_to_k,
+        w_1_1_transformer_blocks_0_attn2_to_v,
+        w_1_1_transformer_blocks_0_attn2_to_out_0,
+        b_1_1_transformer_blocks_0_attn2_to_out_0,
     )
 end
 

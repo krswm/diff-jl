@@ -359,27 +359,12 @@ x1 = [
 x1[1][1]
 
 # %%
-size_head
-
-# %%
-x2 = [
-      model.w_1_1_transformer_blocks_0_attn1_to_out_0 * [
-        x1[n][(o - 1) ÷ size_head + 1][(o - 1) % size_head + 1, xy]
-        for o = 1:320
-    ]  + model.b_1_1_transformer_blocks_0_attn1_to_out_0
-
-    for n = 1:2, xy = 1:4096
-]
-
-# %%
-
-# %%
 # x1  # [n][head][ihead, xy]
 a1 = [x1[n][head][ihead, xy] for n=1:2, xy=1:4096, ihead=1:40, head=1:8]  # [n, xy, ihead, head]
 a2 = reshape(a1, (2, 4096, 320))  # [n, xy, o]
 a3 = (a2[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
 a4 = Ref(model.w_1_1_transformer_blocks_0_attn1_to_out_0) .* a3 .+ Ref(model.b_1_1_transformer_blocks_0_attn1_to_out_0)  # [n, xy][o]
-x2 = (a4[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
+x2 = [a4[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
 
 # %%
 _y = (y[n][xy, o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
@@ -388,5 +373,59 @@ x4 = _y .+ x2  # [n, xy, o]
 # %%
 a1 = (x4[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
 a2 = layer_norm.(a1, Ref(model.g_1_1_transformer_blocks_0_norm2), Ref(model.t_1_1_transformer_blocks_0_norm2))  # [n, xy][o]
-x5 = (a[n, xy][o] for n=1:2, xy=1:4096, o=1:320)  # [n, xy, o]
-x5 |> collect
+x5 = [a2[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
+
+# %%
+# Finally! Text prompt embedding
+c  # [embd, ctx, n]
+_c = [c[embd, ctx, n] for n=1:2, ctx=1:77, embd=1:768]  # [n, ctx, embd]
+;
+
+# %%
+a = (x5[n, xy, :] for n=1:2, xy=1:4096)  # [n, xy][o]
+a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_q) .* a  # [n, xy][o]
+q_attn2 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]  # [n, xy, o]
+;
+
+# %% [markdown]
+# Aha! `collect` consumes the generator and leaves nothing! Inter-cell generator is not safe.
+
+# %%
+a = (_c[n, ctx, :] for n=1:2, ctx=1:77)  # [n, ctx][embd]
+a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_k) .* a  # [n, ctx][o]
+k_attn2 = [a[n, ctx][o] for n=1:2, ctx=1:77, o=1:320]  # [n, ctx, o]
+;
+
+# %%
+a = (_c[n, ctx, :] for n=1:2, ctx=1:77)  # [n, ctx][embd]
+a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_v) .* a  # [n, ctx][o]
+v_attn2 = [a[n, ctx][o] for n=1:2, ctx=1:77, o=1:320]  # [n, ctx, o]
+;
+
+# %%
+q_attn2_r = reshape(q_attn2, (2, 4096, 40, 8))  # [n, xy, ihead, head]
+k_attn2_r = reshape(k_attn2, (2, 77, 40, 8))  # [n, ctx, ihead, head]
+v_attn2_r = reshape(v_attn2, (2, 77, 40, 8))  # [n, ctx, ihead, head]
+;
+
+# %%
+x7 = [k_attn2_r[n, :, :, head] * q_attn2_r[n, xy, :, head] / sqrt(40.0) for n=1:2, xy=1:4096, head=1:8]  # [n, xy, head][ctx]
+;
+
+# %%
+x8 = softmax.(x7)  # [n, xy, head][ctx]
+;
+
+# %%
+x9 = [v_attn2_r[n, :, :, head]' * x8[n, xy, head] for n=1:2, xy=1:4096, head=1:8]  # [n, xy, head][ihead]
+;
+
+# %%
+a = [x9[n, xy, head][ihead] for n = 1:2, xy=1:4096, ihead=1:40, head=1:8]
+x10 = reshape(a, (2, 4096, 320))  # [n, xy, o]
+x11 = [x10[n, xy, :] for n=1:2, xy=1:4096]
+;
+
+# %%
+a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_out_0) .* x11 .+ Ref(model.b_1_1_transformer_blocks_0_attn2_to_out_0)  # [n, xy][o]
+x12 = [a[n, xy][o] for n=1:2, xy=1:4096, o=1:320]
