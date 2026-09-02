@@ -363,22 +363,27 @@ x1 = [
 x1[1][1]
 
 # %%
-#=
-x = [
-    begin
-        q = y[1:]
-    end
-    for y ∈ x
+size_head
+
+# %%
+
+
+x2 = [
+      model.w_1_1_transformer_blocks_0_attn1_to_out_0 * [
+        x1[n][(o - 1) ÷ size_head + 1][(o - 1) % size_head + 1, xy]
+        for o = 1:320
+    ]  + model.b_1_1_transformer_blocks_0_attn1_to_out_0
+
+    for n = 1:2, xy = 1:4096
 ]
 
-chunks = Iterators.partition.(
-    Iterators.partition(x, n_embd),
-    model.n_embd ÷ model.n_head,
-)
-q = popfirst!(chunks)
-k[:] = hcat.(k, popfirst!(chunks))
-v[:] = hcat.(v, popfirst!(chunks))
-# Scaled dot-product attention
-a = v .* softmax.(transpose.(k) .* q ./ √Float32(model.n_embd ÷ model.n_head))
-x = vcat(a...)
-=#
+x3 = [
+    x2[n, xy][o]
+    for n = 1:2, xy = 1:4096, o = 1:320
+]
+
+# I will need a ton of refactoring
+
+
+
+# %%
