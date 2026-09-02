@@ -120,7 +120,9 @@ function conv2d(wc, bc, latent)
 
     Cout, Cin_, HH, WW = size(wc)
     if !(Cin == Cin_ && HH == WW && HH % 2 == 1)
-        print(Cin, " ", Cin_, " ", HH, " ", WW)
+        print("$(size(latent))")
+        print("$(size(wc))")
+        print("$Cin $Cin_ $HH $WW")
         @assert false
     end
 
@@ -238,27 +240,32 @@ end
 
 
 function calc_rblock(latent, f, rblock)
-    # latent [n, in, y, x]
-    num_n, num_in, num_y, num_x = size(latent)
-    num_out, = size(f)
+    num_n, num_o, num_y, num_x = size(latent)  # latent [n, o, y, x]
+    num_fs, = size(f)  # f [fs], 1 <= fs <= 1280
 
-    x = groupnorm(rblock.g1, rblock.t1, 32, latent)  # [n, in, y, x]
-    x = x ./ (exp.(-x) .+ 1)  # [n, in, y, x]
-    x = conv2d(rblock.wc1, rblock.bc1, x) |> collect  # [n, out, y, x]
-    f = f ./ (exp.(-f) .+ 1)  # [out]
-    f = rblock.w * f + rblock.b  # [out]
-    _x_ = (x[n, :, y, x_] for n=1:num_n, y=1:num_y, x_=1:num_x)  # [n, y, x][out]
-    merged = Ref(f) .+ _x_  # [n, y, x][out]
-    merged = [merged[n, y, x][out] for n=1:num_n, out=1:num_out, y=1:num_y, x=1:num_x]  # [n, out, y, x]
-    merged = groupnorm(rblock.g2, rblock.t2, 32, merged)  # [n, out, y, x]
-    merged = merged ./ (exp.(-merged) .+ 1)  # [n, out, y, x]
-    merged = conv2d(rblock.wc2, rblock.bc2, merged)  # [n, out, y, x]
-    if num_in == num_out
-        l = latent  # [n, out, y, x]
-    else  # has_skip_connection = true
-        l = conv2d(rblock.wc3, rblock.bc3, latent)  # [n, out, y, x]
+    x = groupnorm(rblock.g1, rblock.t1, 32, latent)  # [n, o, y, x]
+    x = x ./ (exp.(-x) .+ 1)  # [n, o, y, x]
+    print("<A>")
+    x = conv2d(rblock.wc1, rblock.bc1, x) |> collect  # [n, fo, y, x]
+    _, num_fo, _, _ = size(x)
+    print("<B>")
+    f_ = f ./ (exp.(-f) .+ 1)  # [fs]
+    # rblock.w [fo, fs], rblock.b [fo]
+    f_ = rblock.w * f_ + rblock.b  # [fo]
+    _x_ = (x[n, :, y, x_] for n=1:num_n, y=1:num_y, x_=1:num_x)  # [n, y, x][fo]
+    merged = Ref(f_) .+ _x_  # [n, y, x][fo]
+    merged = [merged[n, y, x][fo] for n=1:num_n, fo=1:num_fo, y=1:num_y, x=1:num_x]  # [n, fo, y, x]
+    merged = groupnorm(rblock.g2, rblock.t2, 32, merged)  # [n, fo, y, x]
+    merged = merged ./ (exp.(-merged) .+ 1)  # [n, fo, y, x]
+    print("<C>")
+    merged = conv2d(rblock.wc2, rblock.bc2, merged) |> collect  # [n, fo, y, x]
+    print("<D>")
+    if num_o == num_fo
+        l = latent  # [n, fo, y, x]
+    else
+        l = conv2d(rblock.wc3, rblock.bc3, latent) |> collect  # [n, fo, y, x]
     end
-    l .+ merged  # [n, out, y, x]
+    l .+ merged  # [n, fo, y, x]
 end
 
 # %%
@@ -550,3 +557,6 @@ print("10.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.10.0"])
 print("11.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.11.0"])
+
+# %% [markdown]
+# Yay! Expected result! I finished the first half of the U-net!
