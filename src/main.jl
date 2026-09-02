@@ -516,43 +516,81 @@ x = latent
 
 print("0.0 ")
 @time x = conv2d(model.convs["model.diffusion_model.input_blocks.0.0"]..., x) |> collect
+s0 = x
 print("1.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
 print("1.1 ")
 @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
+s1 = x
 print("2.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
 print("2.1 ")
 @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
+s2 = x
 
 print("3.0 ")
 @time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.3.0.op"]..., x) |> collect
+s3 = x
 print("4.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.4.0"])
 print("4.1 ")
+s4 = x
 @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.4.1"])
 print("5.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.5.0"])
 print("5.1 ")
 @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.5.1"])
+s5 = x
 
 print("6.0 ")
 @time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.6.0.op"]..., x) |> collect
+s6 = x
 print("7.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.7.0"])
 print("7.1 ")
 @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.7.1"])
+s7 = x
 print("8.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.8.0"])
 print("8.1 ")
 @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.8.1"])
+s8 = x
 
 print("9.0 ")
 @time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.9.0.op"]..., x) |> collect
+s9 = x
 print("10.0 ")
 @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.10.0"])
+s10 = x
 print("11.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.11.0"])
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.11.0"]);
+s11 = x
+
+x_unet_e = x;
 
 # %% [markdown]
 # Yay! Expected result! I finished the first half of the U-net!
+
+# %%
+x = x_unet_e
+print("m0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.middle_block.0"])
+print("m1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.middle_block.1"])
+print("m2 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.middle_block.2"])
+
+x_unet_m = x;
+
+# %%
+function upsample(x)
+    # x [n, o, half_y, half_x]
+    num_n, num_o, num_half_y, num_half_x = size(x)
+    @views (x[n, o, y ÷ 2, x ÷ 2] for n=1:num_n, o=1:num_o, y=1:(2 * num_half_y), x=1:(2 * num_half_x)) # [n, o, y, x]
+end
+
+# %%
+x = x_unet_m
+cat(x, s11; dims=2)
+
+# %%
