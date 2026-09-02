@@ -245,10 +245,8 @@ function calc_rblock(latent, f, rblock)
 
     x = groupnorm(rblock.g1, rblock.t1, 32, latent)  # [n, o, y, x]
     x = x ./ (exp.(-x) .+ 1)  # [n, o, y, x]
-    print("<A>")
     x = conv2d(rblock.wc1, rblock.bc1, x) |> collect  # [n, fo, y, x]
     _, num_fo, _, _ = size(x)
-    print("<B>")
     f_ = f ./ (exp.(-f) .+ 1)  # [fs]
     # rblock.w [fo, fs], rblock.b [fo]
     f_ = rblock.w * f_ + rblock.b  # [fo]
@@ -257,9 +255,7 @@ function calc_rblock(latent, f, rblock)
     merged = [merged[n, y, x][fo] for n=1:num_n, fo=1:num_fo, y=1:num_y, x=1:num_x]  # [n, fo, y, x]
     merged = groupnorm(rblock.g2, rblock.t2, 32, merged)  # [n, fo, y, x]
     merged = merged ./ (exp.(-merged) .+ 1)  # [n, fo, y, x]
-    print("<C>")
     merged = conv2d(rblock.wc2, rblock.bc2, merged) |> collect  # [n, fo, y, x]
-    print("<D>")
     if num_o == num_fo
         l = latent  # [n, fo, y, x]
     else
