@@ -213,12 +213,6 @@ function layer_norm(
     g .* (x .- mean(x)) ./ √(var(x, corrected = false) + 1f-5) + t
 end
 
-# Numerically stable softmax
-function softmax(x::Vector{Float32})::Vector{Float32}
-    x = exp.(x .- maximum(x))
-    x / sum(x)
-end
-
 # Pre-sampled random tensors
 # The diffusion model requires a random noise,
 # however, I want the whole tensor calculation deterministic
@@ -324,27 +318,49 @@ x[1]
 
 # %%
 
+# %%
+
+# %%
+"hello!"
+
+# %%
+# n [xy o]
+
+
 
 # Self attention.
 # Difference from the attention for GPT-2 or CLiP:
 # - No bias on input projection. Only weight matrix.
 # - No causal mask (that means I can't use KV-cache)
 
+
+# Numerically stable softmax
+function softmax(x)
+    x = exp.(x .- maximum(x))
+    x / sum(x)
+end
+
+
 n_embd = 320
-n_head = 40
+n_head = 8
 size_head = n_embd ÷ n_head
-x = [
+x1 = [
     begin
         y = model.w_1_1_transformer_blocks_0_attn1 * y
-        q = y[1:n_embd, :]
-        k = y[(n_embd + 1):(2 * n_embd), :]
-        v = y[(2 * n_embd + 1):(3 * n_embd), :]
-        q
+        qq = y[1:n_embd, :]
+        kk = y[(n_embd + 1):(2 * n_embd), :]
+        vv = y[(2 * n_embd + 1):(3 * n_embd), :]
+        q = (qq[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+        k = (kk[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+        v = (vv[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+        kq = transpose.(k) .* q ./ sqrt(Float32(size_head))
+        kqq = [hcat([softmax(kq__) for kq__ in eachcol(kq_)]...) for kq_ in kq]
+        v .* kqq
     end
     for y ∈ x
 ]
 
-
+x1[1][1]
 
 # %%
 #=
