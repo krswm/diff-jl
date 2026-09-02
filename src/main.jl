@@ -219,6 +219,207 @@ function layer_norm(x, g, t)
     g .* (x .- mean(x)) ./ √(var(x, corrected = false) + 1f-5) + t
 end
 
+#### RESIDUAL BLOCK ####
+
+####
+
+# conv
+#      n o y x
+# - n (batch)   1 ≤ n ≤ 2
+# - o (Cout)    1 ≤ o ≤ 320
+# - y (y axis)  1 ≤ y ≤ 64
+# - x (x axis)  1 ≤ x ≤ 64
+
+
+function calc_rblock(latent, f, rblock)
+    num_n, num_o, num_y, num_x = size(latent)
+
+    x = groupnorm(rblock.g1, rblock.t1, 32, latent)  # [n, o, y, x]
+    x = x ./ (exp.(-x) .+ 1)  # [n, o, y, x]
+    x = conv2d(rblock.wc1, rblock.bc1, x) |> collect  # [n, o, y, x]
+    f = f ./ (exp.(-f) .+ 1)  # [o]
+    f = rblock.w * f + rblock.b  # [o]
+    _x_ = (x[n, :, y, x_] for n=1:num_n, y=1:num_y, x_=1:num_x)  # [n, y, x][o]
+    merged = Ref(f) .+ _x_  # [n, y, x][o]
+    merged = [merged[n, y, x][o] for n=1:num_n, o=1:num_o, y=1:num_y, x=1:num_x]  # [n, o, y, x]
+    merged = groupnorm(rblock.g2, rblock.t2, 32, merged)  # [n, o, y, x]
+    merged = merged ./ (exp.(-merged) .+ 1)  # [n, o, y, x]
+    merged = conv2d(rblock.wc2, rblock.bc2, merged)  # [n, o, y, x]
+    latent .+ merged  # [n, o, y, x]
+end
+
+#### ATTENTION BLOCK ####
+ 
+# Numerically stable softmax
+function softmax(x)
+    x = exp.(x .- maximum(x))
+    x / sum(x)
+end
+
+function calc_ablock(x, c, ablock)
+    num_n, num_o, num_y, num_x = size(latent)
+
+    x = latent
+    x = groupnorm(ablock.g1, ablock.t1, 32, x)
+    x = conv2d(ablock.wc1, ablock.bc1, x) |> collect
+
+    # n o y x -> x y o n -> xy o n -> n [xy o]
+    # (Pytorch is row-major but Julia is column-major)
+    x = permutedims(x, (4, 3, 2, 1))
+    x = reshape(x, (num_x * num_y, num_o, num_n))
+    x = eachslice(x, dims=3)
+    y = x
+
+    x = [
+        begin
+            yy = [
+                layer_norm(collect(z), ablock.g2, ablock.t2)
+                for z in eachslice(y, dims=1)
+            ]
+            hcat(yy...)
+        end for y in x
+    ]
+
+    # %%
+    # n [xy o]
+
+
+
+    # Self attention.
+    # Difference from the attention for GPT-2 or CLiP:
+    # - No bias on input projection. Only weight matrix.
+    # - No causal mask (that means I can't use KV-cache)
+
+
+
+    n_embd = num_o
+    n_head = 8
+    size_head = n_embd ÷ n_head
+    x1 = [
+        begin
+            y = ablock.w21 * y
+            qq = y[1:n_embd, :]
+            kk = y[(n_embd + 1):(2 * n_embd), :]
+            vv = y[(2 * n_embd + 1):(3 * n_embd), :]
+            q = (qq[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+            k = (kk[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+            v = (vv[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+            kq = transpose.(k) .* q ./ sqrt(Float32(size_head))
+            kqq = [hcat([softmax(kq__) for kq__ in eachcol(kq_)]...) for kq_ in kq]
+            v .* kqq
+        end
+        for y ∈ x
+    ]
+
+    # %%
+
+    num_xy = num_x * num_y
+
+    # x1  # [n][head][ihead, xy]
+    a1 = [x1[n][head][ihead, xy] for n=1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]  # [n, xy, ihead, head]
+    a2 = reshape(a1, (num_n, num_xy, num_o))  # [n, xy, o]
+    a3 = (a2[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
+    a4 = Ref(ablock.w22) .* a3 .+ Ref(ablock.b22)  # [n, xy][o]
+    x2 = [a4[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
+
+    # %%
+    _y = (y[n][xy, o] for n=1:num_n, xy=1:num_xy, o=1:num_o)  # [n, xy, o]
+    x4 = _y .+ x2  # [n, xy, o]
+
+    # %%
+    a1 = (x4[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
+    a2 = layer_norm.(a1, Ref(ablock.g3), Ref(ablock.t3))  # [n, xy][o]
+    x5 = [a2[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
+
+    # %%
+    # Finally! Text prompt embedding
+    c  # [embd, ctx, n]
+
+    num_embd, num_ctx, _ = size(c)
+
+    _c = [c[embd, ctx, n] for n=1:num_n, ctx=1:num_ctx, embd=1:num_embd]  # [n, ctx, embd]
+    ;
+
+    # %%
+    a = (x5[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
+    a = Ref(ablock.w31q) .* a  # [n, xy][o]
+    q_attn2 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
+    ;
+
+    # %% [markdown]
+    # Aha! `collect` consumes the generator and leaves nothing! Inter-cell generator is not safe.
+
+    # %%
+    a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
+    a = Ref(ablock.w31k) .* a  # [n, ctx][o]
+    k_attn2 = [a[n, ctx][o] for n=1:num_n, ctx=1:num_ctx, o=1:num_o]  # [n, ctx, o]
+    ;
+
+    # %%
+    a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
+    a = Ref(ablock.w31v) .* a  # [n, ctx][o]
+    v_attn2 = [a[n, ctx][o] for n=1:num_n, ctx=1:num_ctx, o=1:num_o]  # [n, ctx, o]
+    ;
+
+    # %%
+    q_attn2_r = reshape(q_attn2, (num_n, num_xy,  size_head, n_head))  # [n, xy, ihead, head]
+    k_attn2_r = reshape(k_attn2, (num_n, num_ctx, size_head, n_head))  # [n, ctx, ihead, head]
+    v_attn2_r = reshape(v_attn2, (num_n, num_ctx, size_head, n_head))  # [n, ctx, ihead, head]
+    ;
+
+    # %%
+    x7 = [k_attn2_r[n, :, :, head] * q_attn2_r[n, xy, :, head] / sqrt(Float32(size_head)) for n=1:num_n, xy=1:num_xy, head=1:n_head]  # [n, xy, head][ctx]
+    ;
+
+    # %%
+    x8 = softmax.(x7)  # [n, xy, head][ctx]
+    ;
+
+    # %%
+    x9 = [v_attn2_r[n, :, :, head]' * x8[n, xy, head] for n=1:num_n, xy=1:num_xy, head=1:n_head]  # [n, xy, head][ihead]
+    ;
+
+    # %%
+    a = [x9[n, xy, head][ihead] for n = 1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]
+    x10 = reshape(a, (num_n, num_xy, num_o))  # [n, xy, o]
+    x11 = [x10[n, xy, :] for n=1:num_n, xy=1:num_xy]
+    ;
+
+    # %%
+    a = Ref(ablock.w32) .* x11 .+ Ref(ablock.b32)  # [n, xy][o]
+    x12 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
+    ;
+
+    # %%
+    x13 = x4 + x12  # [n, xy, o]
+    ;
+
+    # %%
+    x13 = Float32.(x13)
+    ;
+
+    # %%
+    ugelu(u, v) = u .* (tanh.((v .^ 3 * 0.044715f0 + v) * sqrt(2.0f0 / pi)) .+ 1.0f0) .* v .* 0.5f0
+    # `u` and `v` are vectors.
+
+    # %%
+    a = (x13[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
+    a = layer_norm.(a, Ref(ablock.g4), Ref(ablock.t4))  # [n, xy][o]
+    a = Ref(ablock.w41) .* a .+ Ref(ablock.b41) #[n, xy][o8] (1 <= o8 <= 4 * 320 * 2)
+    a = reshape.(a, Ref((4 * num_o, 2)))  # [n, xy][o4, chunk]  (1 <= o4 <= 4 * 320, 1 <= chunk <= 2)
+    b, c = ((a[n, xy][:, chunk] for n=1:num_n, xy=1:num_xy) for chunk=1:num_n)  # [n, xy][o4], [n, xy][o4]
+    d = ugelu.(b, c)  # [n, xy][o4]
+    a = Ref(ablock.w42) .* d .+ Ref(ablock.b42)  # [n, xy][o]
+    d = (a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o)  # [n, xy, o]
+    d = x13 .+ d  # [n, xy, o]
+    # `.` in `.+` is necessary when I add an `Array` and a `Generator` of same shape.
+    d = [d[n, xy, o] for n=1:num_n, o=1:num_o, xy=1:num_xy]  # [n, o, xy]
+    d = reshape(d, (num_n, num_o, num_x, num_y))  # [n, o, x, y]
+    a = [d[n, o, x, y] for n=1:num_n, o=1:num_o, y=1:num_y, x=1:num_x]  # [n, o, y, x]
+    a = conv2d(ablock.wc4, ablock.bc4, a)  #[n, o, y, x]
+    latent .+ a
+end
+
 # Pre-sampled random tensors
 # The diffusion model requires a random noise,
 # however, I want the whole tensor calculation deterministic
@@ -256,209 +457,14 @@ latent = cat(latent, latent, dims = 1)
 # /\ n i y x
 
 latent = conv2d(model.enc_wc1, model.enc_bc1, latent) |> collect
-
-#### RESIDUAL BLOCK ####
-
-####
-
-# conv
-#      n o y x
-# - n (batch)   1 ≤ n ≤ 2
-# - o (Cout)    1 ≤ o ≤ 320
-# - y (y axis)  1 ≤ y ≤ 64
-# - x (x axis)  1 ≤ x ≤ 64
-
-
-function calc_rblock(latent, f, rblock)
-    num_n, num_o, num_y, num_x = size(latent)
-
-    x = groupnorm(rblock.g1, rblock.t1, 32, latent)  # [n, o, y, x]
-    x = x ./ (exp.(-x) .+ 1)  # [n, o, y, x]
-    x = conv2d(rblock.wc1, rblock.bc1, x) |> collect  # [n, o, y, x]
-    f = f ./ (exp.(-f) .+ 1)  # [o]
-    f = rblock.w * f + rblock.b  # [o]
-    _x_ = (x[n, :, y, x_] for n=1:num_n, y=1:num_y, x_=1:num_x)  # [n, y, x][o]
-    merged = Ref(f) .+ _x_  # [n, y, x][o]
-    merged = [merged[n, y, x][o] for n=1:num_n, o=1:num_o, y=1:num_y, x=1:num_x]  # [n, o, y, x]
-    merged = groupnorm(rblock.g2, rblock.t2, 32, merged)  # [n, o, y, x]
-    merged = merged ./ (exp.(-merged) .+ 1)  # [n, o, y, x]
-    merged = conv2d(rblock.wc2, rblock.bc2, merged)  # [n, o, y, x]
-    latent .+ merged  # [n, o, y, x]
-end
-
 latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
-
-#### ATTENTION BLOCK ####
- 
-# Numerically stable softmax
-function softmax(x)
-    x = exp.(x .- maximum(x))
-    x / sum(x)
-end
-
-num_n, num_o, num_y, num_x = size(latent)
-
-x = latent
-x = groupnorm(model.g_1_1_norm, model.t_1_1_norm, 32, x)
-x = conv2d(model.wc_1_1_proj_in, model.bc_1_1_proj_in, x) |> collect
-
-# n o y x -> x y o n -> xy o n -> n [xy o]
-# (Pytorch is row-major but Julia is column-major)
-x = permutedims(x, (4, 3, 2, 1))
-x = reshape(x, (num_x * num_y, num_o, num_n))
-x = eachslice(x, dims=3)
-y = x
-
-x = [
-    begin
-        yy = [
-            layer_norm(collect(z), model.g_1_1_transformer_blocks_0_norm1, model.t_1_1_transformer_blocks_0_norm1)
-            for z in eachslice(y, dims=1)
-        ]
-        hcat(yy...)
-    end for y in x
-]
-
-# %%
-# n [xy o]
+latent = calc_ablock(latent, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
+latent = calc_rblock(latent, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
+latent = calc_ablock(latent, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
 
 
-
-# Self attention.
-# Difference from the attention for GPT-2 or CLiP:
-# - No bias on input projection. Only weight matrix.
-# - No causal mask (that means I can't use KV-cache)
-
-
-
-n_embd = num_o
-n_head = 8
-size_head = n_embd ÷ n_head
-x1 = [
-    begin
-        y = model.w_1_1_transformer_blocks_0_attn1 * y
-        qq = y[1:n_embd, :]
-        kk = y[(n_embd + 1):(2 * n_embd), :]
-        vv = y[(2 * n_embd + 1):(3 * n_embd), :]
-        q = (qq[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
-        k = (kk[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
-        v = (vv[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
-        kq = transpose.(k) .* q ./ sqrt(Float32(size_head))
-        kqq = [hcat([softmax(kq__) for kq__ in eachcol(kq_)]...) for kq_ in kq]
-        v .* kqq
-    end
-    for y ∈ x
-]
-
-# %%
-
-num_xy = num_x * num_y
-
-# x1  # [n][head][ihead, xy]
-a1 = [x1[n][head][ihead, xy] for n=1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]  # [n, xy, ihead, head]
-a2 = reshape(a1, (num_n, num_xy, num_o))  # [n, xy, o]
-a3 = (a2[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
-a4 = Ref(model.w_1_1_transformer_blocks_0_attn1_to_out_0) .* a3 .+ Ref(model.b_1_1_transformer_blocks_0_attn1_to_out_0)  # [n, xy][o]
-x2 = [a4[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
-
-# %%
-_y = (y[n][xy, o] for n=1:num_n, xy=1:num_xy, o=1:num_o)  # [n, xy, o]
-x4 = _y .+ x2  # [n, xy, o]
-
-# %%
-a1 = (x4[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
-a2 = layer_norm.(a1, Ref(model.g_1_1_transformer_blocks_0_norm2), Ref(model.t_1_1_transformer_blocks_0_norm2))  # [n, xy][o]
-x5 = [a2[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
-
-# %%
-# Finally! Text prompt embedding
-c  # [embd, ctx, n]
-
-num_embd, num_ctx, _ = size(c)
-
-_c = [c[embd, ctx, n] for n=1:num_n, ctx=1:num_ctx, embd=1:num_embd]  # [n, ctx, embd]
-;
-
-# %%
-a = (x5[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
-a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_q) .* a  # [n, xy][o]
-q_attn2 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
-;
-
-# %% [markdown]
-# Aha! `collect` consumes the generator and leaves nothing! Inter-cell generator is not safe.
-
-# %%
-a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
-a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_k) .* a  # [n, ctx][o]
-k_attn2 = [a[n, ctx][o] for n=1:num_n, ctx=1:num_ctx, o=1:num_o]  # [n, ctx, o]
-;
-
-# %%
-a = (_c[n, ctx, :] for n=1:num_n, ctx=1:num_ctx)  # [n, ctx][embd]
-a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_v) .* a  # [n, ctx][o]
-v_attn2 = [a[n, ctx][o] for n=1:num_n, ctx=1:num_ctx, o=1:num_o]  # [n, ctx, o]
-;
-
-# %%
-q_attn2_r = reshape(q_attn2, (num_n, num_xy,  size_head, n_head))  # [n, xy, ihead, head]
-k_attn2_r = reshape(k_attn2, (num_n, num_ctx, size_head, n_head))  # [n, ctx, ihead, head]
-v_attn2_r = reshape(v_attn2, (num_n, num_ctx, size_head, n_head))  # [n, ctx, ihead, head]
-;
-
-# %%
-x7 = [k_attn2_r[n, :, :, head] * q_attn2_r[n, xy, :, head] / sqrt(Float32(size_head)) for n=1:num_n, xy=1:num_xy, head=1:n_head]  # [n, xy, head][ctx]
-;
-
-# %%
-x8 = softmax.(x7)  # [n, xy, head][ctx]
-;
-
-# %%
-x9 = [v_attn2_r[n, :, :, head]' * x8[n, xy, head] for n=1:num_n, xy=1:num_xy, head=1:n_head]  # [n, xy, head][ihead]
-;
-
-# %%
-a = [x9[n, xy, head][ihead] for n = 1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]
-x10 = reshape(a, (num_n, num_xy, num_o))  # [n, xy, o]
-x11 = [x10[n, xy, :] for n=1:num_n, xy=1:num_xy]
-;
-
-# %%
-a = Ref(model.w_1_1_transformer_blocks_0_attn2_to_out_0) .* x11 .+ Ref(model.b_1_1_transformer_blocks_0_attn2_to_out_0)  # [n, xy][o]
-x12 = [a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
-;
-
-# %%
-x13 = x4 + x12  # [n, xy, o]
-;
-
-# %%
-x13 = Float32.(x13)
-;
-
-# %%
-ugelu(u, v) = u .* (tanh.((v .^ 3 * 0.044715f0 + v) * sqrt(2.0f0 / pi)) .+ 1.0f0) .* v .* 0.5f0
-# `u` and `v` are vectors.
-
-# %%
-a = (x13[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
-a = layer_norm.(a, Ref(model.g_1_1_transformer_blocks_0_norm3), Ref(model.t_1_1_transformer_blocks_0_norm3))  # [n, xy][o]
-a = Ref(model.w_geglu1) .* a .+ Ref(model.b_geglu1) #[n, xy][o8] (1 <= o8 <= 4 * 320 * 2)
-a = reshape.(a, Ref((4 * num_o, 2)))  # [n, xy][o4, chunk]  (1 <= o4 <= 4 * 320, 1 <= chunk <= 2)
-b, c = ((a[n, xy][:, chunk] for n=1:num_n, xy=1:num_xy) for chunk=1:num_n)  # [n, xy][o4], [n, xy][o4]
-d = ugelu.(b, c)  # [n, xy][o4]
-a = Ref(model.w_geglu2) .* d .+ Ref(model.b_geglu2)  # [n, xy][o]
-d = (a[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o)  # [n, xy, o]
-d = x13 .+ d  # [n, xy, o]
-# `.` in `.+` is necessary when I add an `Array` and a `Generator` of same shape.
-d = [d[n, xy, o] for n=1:num_n, o=1:num_o, xy=1:num_xy]  # [n, o, xy]
-d = reshape(d, (num_n, num_o, num_x, num_y))  # [n, o, x, y]
-a = [d[n, o, x, y] for n=1:num_n, o=1:num_o, y=1:num_y, x=1:num_x]  # [n, o, y, x]
-a = conv2d(model.wc_conv_out, model.bc_conv_out, a)  #[n, o, y, x]
-a = latent .+ a
-
-println(a[1, 1, 1, 1])
+show(IOContext(stdout, :limit => true), "text/plain", latent)
+# Correct result!
 
 # %% [markdown]
 # I finished implementing the residual block and the attention block. Yay!

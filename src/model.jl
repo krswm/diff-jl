@@ -48,6 +48,36 @@ struct ResidualBlock
     bc2::Vector{Float32}
 end
 
+struct AttentionBlock
+    g1::Vector{Float32}
+    t1::Vector{Float32}
+    wc1::Array{Float32, 4}
+    bc1::Vector{Float32}
+
+    g2::Vector{Float32}
+    t2::Vector{Float32}
+    w21::Matrix{Float32}
+    w22::Matrix{Float32}
+    b22::Vector{Float32}
+
+    g3::Vector{Float32}
+    t3::Vector{Float32}
+    w31q::Matrix{Float32}
+    w31k::Matrix{Float32}
+    w31v::Matrix{Float32}
+    w32::Matrix{Float32}
+    b32::Vector{Float32}
+
+    g4::Vector{Float32}
+    t4::Vector{Float32}
+    w41::Matrix{Float32}
+    b41::Vector{Float32}
+    w42::Matrix{Float32}
+    b42::Vector{Float32}
+    wc4::Array{Float32, 4}
+    bc4::Vector{Float32}
+end
+
 struct Model
     n_ctx::Int
     n_embd::Int
@@ -70,38 +100,7 @@ struct Model
     enc_bc1::Vector{Float32}
 
     rblocks::Dict{String, ResidualBlock}
-
-    g_1_1_norm::Vector{Float32}
-    t_1_1_norm::Vector{Float32}
-    wc_1_1_proj_in::Array{Float32, 4}
-    bc_1_1_proj_in::Vector{Float32}
-
-    g_1_1_transformer_blocks_0_norm1::Vector{Float32}
-    t_1_1_transformer_blocks_0_norm1::Vector{Float32}
-
-    w_1_1_transformer_blocks_0_attn1::Matrix{Float32}
-    w_1_1_transformer_blocks_0_attn1_to_out_0::Matrix{Float32}
-    b_1_1_transformer_blocks_0_attn1_to_out_0::Vector{Float32}
-
-    g_1_1_transformer_blocks_0_norm2::Vector{Float32}
-    t_1_1_transformer_blocks_0_norm2::Vector{Float32}
-
-    w_1_1_transformer_blocks_0_attn2_to_q::Matrix{Float32}
-    w_1_1_transformer_blocks_0_attn2_to_k::Matrix{Float32}
-    w_1_1_transformer_blocks_0_attn2_to_v::Matrix{Float32}
-    w_1_1_transformer_blocks_0_attn2_to_out_0::Matrix{Float32}
-    b_1_1_transformer_blocks_0_attn2_to_out_0::Vector{Float32}
-
-    g_1_1_transformer_blocks_0_norm3::Vector{Float32}
-    t_1_1_transformer_blocks_0_norm3::Vector{Float32}
-
-    # Let me switch back to use short names!
-    w_geglu1::Matrix{Float32}
-    b_geglu1::Vector{Float32}
-    w_geglu2::Matrix{Float32}
-    b_geglu2::Vector{Float32}
-    wc_conv_out::Array{Float32, 4}
-    bc_conv_out::Vector{Float32}
+    ablocks::Dict{String, AttentionBlock}
 end
 
 function validate_size(tensor, expected)
@@ -188,60 +187,57 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
             wc2 = tensors["$key.out_layers.3.weight"]
             bc2 = tensors["$key.out_layers.3.bias"]
             ResidualBlock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2)
-        end for key ∈ ["model.diffusion_model.input_blocks.1.0"]
+        end for key ∈ [
+            "model.diffusion_model.input_blocks.1.0",
+            "model.diffusion_model.input_blocks.2.0",
+        ]
     )
 
-    g_1_1_norm = tensors["$prefix.1.1.norm.weight"]
-    t_1_1_norm = tensors["$prefix.1.1.norm.bias"]
-    wc_1_1_proj_in = tensors["$prefix.1.1.proj_in.weight"]
-    bc_1_1_proj_in = tensors["$prefix.1.1.proj_in.bias"]
+    ablocks = Dict(
+        key => begin
+            g1   = tensors["$key.norm.weight"]
+            t1   = tensors["$key.norm.bias"]
+            wc1  = tensors["$key.proj_in.weight"]
+            bc1  = tensors["$key.proj_in.bias"]
     
-    g_1_1_transformer_blocks_0_norm1 = tensors[
-        "$prefix.1.1.transformer_blocks.0.norm1.weight"
-    ]
-    t_1_1_transformer_blocks_0_norm1 = tensors[
-        "$prefix.1.1.transformer_blocks.0.norm1.bias"
-    ]
+            g2   = tensors["$key.transformer_blocks.0.norm1.weight"]
+            t2   = tensors["$key.transformer_blocks.0.norm1.bias"]
+            w21  = vcat(
+                tensors["$key.transformer_blocks.0.attn1.to_q.weight"],
+                tensors["$key.transformer_blocks.0.attn1.to_k.weight"],
+                tensors["$key.transformer_blocks.0.attn1.to_v.weight"],
+            )
+            w22  = tensors["$key.transformer_blocks.0.attn1.to_out.0.weight"]
+            b22  = tensors["$key.transformer_blocks.0.attn1.to_out.0.bias"]
 
-    w_1_1_transformer_blocks_0_attn1 = vcat(
-        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_q.weight"],
-        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_k.weight"],
-        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_v.weight"],
+            g3   = tensors["$key.transformer_blocks.0.norm2.weight"]
+            t3   = tensors["$key.transformer_blocks.0.norm2.bias"]
+            w31q = tensors["$key.transformer_blocks.0.attn2.to_q.weight"]
+            w31k = tensors["$key.transformer_blocks.0.attn2.to_k.weight"]
+            w31v = tensors["$key.transformer_blocks.0.attn2.to_v.weight"]
+            w32  = tensors["$key.transformer_blocks.0.attn2.to_out.0.weight"] 
+            b32  = tensors["$key.transformer_blocks.0.attn2.to_out.0.bias"] 
+
+            g4   = tensors["$key.transformer_blocks.0.norm3.weight"]
+            t4   = tensors["$key.transformer_blocks.0.norm3.bias"]
+            w41  = tensors["$key.transformer_blocks.0.ff.net.0.proj.weight"]
+            b41  = tensors["$key.transformer_blocks.0.ff.net.0.proj.bias"]
+            w42  = tensors["$key.transformer_blocks.0.ff.net.2.weight"]
+            b42  = tensors["$key.transformer_blocks.0.ff.net.2.bias"]
+            wc4  = tensors["$key.proj_out.weight"]
+            bc4  = tensors["$key.proj_out.bias"]
+
+            AttentionBlock(
+                g1, t1, wc1, bc1,
+                g2, t2, w21, w22, b22,
+                g3, t3, w31q, w31k, w31v, w32, b32,
+                g4, t4, w41, b41, w42, b42, wc4, bc4,
+            )
+        end for key ∈ [
+            "model.diffusion_model.input_blocks.1.1",
+            "model.diffusion_model.input_blocks.2.1",
+        ]
     )
-    w_1_1_transformer_blocks_0_attn1_to_out_0 = (
-        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_out.0.weight"]
-    )
-    b_1_1_transformer_blocks_0_attn1_to_out_0 = (
-        tensors["$prefix.1.1.transformer_blocks.0.attn1.to_out.0.bias"]
-    )
-
-    g_1_1_transformer_blocks_0_norm2 = tensors[
-        "$prefix.1.1.transformer_blocks.0.norm2.weight"
-    ]
-    t_1_1_transformer_blocks_0_norm2 = tensors[
-        "$prefix.1.1.transformer_blocks.0.norm2.bias"
-    ]
-
-    
-    w_1_1_transformer_blocks_0_attn2_to_q     = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_q.weight"]
-    w_1_1_transformer_blocks_0_attn2_to_k     = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_k.weight"]
-    w_1_1_transformer_blocks_0_attn2_to_v     = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_v.weight"]
-    w_1_1_transformer_blocks_0_attn2_to_out_0 = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_out.0.weight"] 
-    b_1_1_transformer_blocks_0_attn2_to_out_0 = tensors["$prefix.1.1.transformer_blocks.0.attn2.to_out.0.bias"] 
-
-    g_1_1_transformer_blocks_0_norm3 = tensors[
-        "$prefix.1.1.transformer_blocks.0.norm3.weight"
-    ]
-    t_1_1_transformer_blocks_0_norm3 = tensors[
-        "$prefix.1.1.transformer_blocks.0.norm3.bias"
-    ]
-
-    w_geglu1    = tensors["$prefix.1.1.transformer_blocks.0.ff.net.0.proj.weight"]
-    b_geglu1    = tensors["$prefix.1.1.transformer_blocks.0.ff.net.0.proj.bias"]
-    w_geglu2    = tensors["$prefix.1.1.transformer_blocks.0.ff.net.2.weight"]
-    b_geglu2    = tensors["$prefix.1.1.transformer_blocks.0.ff.net.2.bias"]
-    wc_convout = tensors["$prefix.1.1.proj_out.weight"]
-    bc_convout = tensors["$prefix.1.1.proj_out.bias"]
 
     Model(
         n_ctx,
@@ -262,30 +258,7 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         enc_wc1,
         enc_bc1,
         rblocks,
-        g_1_1_norm,
-        t_1_1_norm,
-        wc_1_1_proj_in,
-        bc_1_1_proj_in,
-        g_1_1_transformer_blocks_0_norm1,
-        t_1_1_transformer_blocks_0_norm1,
-        w_1_1_transformer_blocks_0_attn1,
-        w_1_1_transformer_blocks_0_attn1_to_out_0,
-        b_1_1_transformer_blocks_0_attn1_to_out_0,
-        g_1_1_transformer_blocks_0_norm2,
-        t_1_1_transformer_blocks_0_norm2,
-        w_1_1_transformer_blocks_0_attn2_to_q,
-        w_1_1_transformer_blocks_0_attn2_to_k,
-        w_1_1_transformer_blocks_0_attn2_to_v,
-        w_1_1_transformer_blocks_0_attn2_to_out_0,
-        b_1_1_transformer_blocks_0_attn2_to_out_0,
-        g_1_1_transformer_blocks_0_norm3,
-        t_1_1_transformer_blocks_0_norm3,
-        w_geglu1,
-        b_geglu1,
-        w_geglu2,
-        b_geglu2,
-        wc_convout,
-        bc_convout,
+        ablocks,
     )
 end
 
