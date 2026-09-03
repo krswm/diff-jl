@@ -30,6 +30,8 @@ include("tokenizer.jl")
 using .Tokenizer
 include("transformer.jl")
 using .Transformer
+include("ddpm.jl")
+using .DDPM
 
 # %%
 function get_prompt_embedding(ids::Vector{Int}, model::Model.Model)::Matrix{Float32}
@@ -411,6 +413,8 @@ rand42 = load_safetensors(ARGS2)
 
 latent = rand42["l"]
 
+latent_orig = latent;
+
 t = 900
 
 println("~~~~ A ~~~~")
@@ -435,6 +439,7 @@ latent = cat(latent, latent, dims = 1)
 # \/
 # /\ n i y x
 ;
+
 
 # %%
 function conv2d_strided(wc, bc, latent)
@@ -674,3 +679,22 @@ x_positive, x_negative = eachslice(x; dims=1)
 
 config_scale = 8
 x = config_scale .* (x_positive - x_negative) .+ x_negative
+
+x_conf = x
+
+# %%
+
+
+# ddpm_step(900, 800, latent_orig, x_conf)
+latent_orig |> size |> println
+x_conf |> size |> println
+
+# latent_orig  [n, i, y, x]
+# x_conf [i, y, x]
+x_confi = insertdims(x_conf, dims=1)
+# x_config = cat(x_confi, x_confi, dims=1)  # [n, i, y, x]
+# x_config |> size
+ddpm_step(900, 800, latent_orig, x_confi)
+
+# %% [markdown]
+# Float error gets noticable but still expected calculation.
