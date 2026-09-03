@@ -670,6 +670,7 @@ x = x_unet_d
 x = groupnorm(model.g_final, model.t_final, 32, x)
 x = x ./ (exp.(-x) .+ 1)
 x = conv2d(model.wc_final, model.bc_final, x) |> collect
+x_positive, x_negative = eachslice(x; dims=1)
 
-# %%
-Diffusion implementation finished!!
+config_scale = 8
+x = config_scale .* (x_positive - x_negative) .+ x_negative
