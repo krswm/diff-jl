@@ -23,12 +23,18 @@ xₜ = ddpmref["l"]
 # https://arxiv.org/pdf/2006.11239
 
 x₀ = (xₜ .- √(1 - curr_α_bar) * ϵ) ./ √curr_α_bar
-show(IOContext(stdout, :limit => true), "text/plain", x₀)
 
 
-√prev_α_bar * (1 - αₜ) / (1 - curr_α_bar) |> println
-exit(0)
+
 
 μₜ = √prev_α_bar * (1 - αₜ) / (1 - curr_α_bar) * x₀ + √αₜ * (1 - prev_α_bar) / (1 - curr_α_bar) * xₜ
 
-show(IOContext(stdout, :limit => true), "text/plain", μₜ)
+noise = rand42["n$curr_t"]
+
+variance = (1 - prev_α_bar) / (1 - curr_α_bar) * (1 - αₜ)
+
+result = μₜ + √variance * noise
+
+show(IOContext(stdout, :limit => true), "text/plain", result)
+
+# Done!
