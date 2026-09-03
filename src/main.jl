@@ -401,47 +401,6 @@ function calc_ablock(x, c, ablock)
 end
 
 # %%
-# Pre-sampled random tensors
-# The diffusion model requires a random noise,
-# however, I want the whole tensor calculation deterministic
-# so that I can compare the result with the reference implementation.
-# I extracted the random tensors from reference implementation 
-# (https://github.com/hkproj/pytorch-stable-diffusion, excellent explanation video!)
-# and save it to a Safetensors file.
-# I'll use genuine random number generator in Julia later.
-rand42 = load_safetensors(ARGS2)
-
-latent = rand42["l"]
-
-latent_orig = latent;
-
-t = 900
-
-println("~~~~ A ~~~~")
-
-f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
-f = vcat(cos.(f), sin.(f))
-
-f = model.time_w1 * f + model.time_b1
-f = f ./ (exp.(-f) .+ 1)
-f = model.time_w2 * f + model.time_b2
-
-# Indices:
-# - n (batch)   1 ≤ n ≤ 2
-# - i (Cin)     1 ≤ i ≤ 4
-# - o (Cout)    1 ≤ o ≤ 320
-# - y (y axis)  1 ≤ y ≤ 64
-# - x (x axis)  1 ≤ x ≤ 64
-# - η (Δy+2)    1 ≤ η ≤ 3
-# - ξ (Δx+2)    1 ≤ ξ ≤ 3
-
-latent = cat(latent, latent, dims = 1)
-# \/
-# /\ n i y x
-;
-
-
-# %%
 function conv2d_strided(wc, bc, latent)
     # Kernel size 3x3, padding 1
     # stride 2 pixels
@@ -517,77 +476,6 @@ function conv2d_strided(wc, bc, latent)
 end
 
 # %%
-x = latent
-
-print("0.0 ")
-@time x = conv2d(model.convs["model.diffusion_model.input_blocks.0.0"]..., x) |> collect
-s0 = x
-print("1.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
-print("1.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
-s1 = x
-print("2.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
-print("2.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
-s2 = x
-
-print("3.0 ")
-@time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.3.0.op"]..., x) |> collect
-s3 = x
-print("4.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.4.0"])
-print("4.1 ")
-s4 = x
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.4.1"])
-print("5.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.5.0"])
-print("5.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.5.1"])
-s5 = x
-
-print("6.0 ")
-@time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.6.0.op"]..., x) |> collect
-s6 = x
-print("7.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.7.0"])
-print("7.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.7.1"])
-s7 = x
-print("8.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.8.0"])
-print("8.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.8.1"])
-s8 = x
-
-print("9.0 ")
-@time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.9.0.op"]..., x) |> collect
-s9 = x
-print("10.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.10.0"])
-s10 = x
-print("11.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.11.0"]);
-s11 = x
-
-x_unet_e = x;
-
-# %% [markdown]
-# Yay! Expected result! I finished the first half of the U-net!
-
-# %%
-x = x_unet_e
-print("m0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.middle_block.0"])
-print("m1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.middle_block.1"])
-print("m2 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.middle_block.2"])
-
-x_unet_m = x;
-
-# %%
 function upsample(x)
     # x [n, o, half_y, half_x]
     num_n, num_o, num_half_y, num_half_x = size(x)
@@ -595,106 +483,207 @@ function upsample(x)
 end
 
 # %%
-x = x_unet_m
-x = cat(x, s11; dims=2)
-print("d0.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.0.0"])
-x = cat(x, s10; dims=2)
-print("d1.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.1.0"])
-x = cat(x, s9; dims=2)
-print("d2.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.2.0"])
-print("d2.1 ")
-@time x = upsample(x) |> collect
-@time x = conv2d(model.convs["model.diffusion_model.output_blocks.2.1.conv"]..., x) |> collect
+# Pre-sampled random tensors
+# The diffusion model requires a random noise,
+# however, I want the whole tensor calculation deterministic
+# so that I can compare the result with the reference implementation.
+# I extracted the random tensors from reference implementation 
+# (https://github.com/hkproj/pytorch-stable-diffusion, excellent explanation video!)
+# and save it to a Safetensors file.
+# I'll use genuine random number generator in Julia later.
+rand42 = load_safetensors(ARGS2)
 
-x = cat(x, s8; dims=2)
-print("d3.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.3.0"])
-print("d3.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.3.1"])
-x = cat(x, s7; dims=2)
-print("d4.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.4.0"])
-print("d4.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.4.1"])
-x = cat(x, s6; dims=2)
-print("d5.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.5.0"])
-print("d5.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.5.1"])
-print("d5.2 ")
-@time x = upsample(x) |> collect
-@time x = conv2d(model.convs["model.diffusion_model.output_blocks.5.2.conv"]..., x) |> collect
+latent_orig = rand42["l"]
 
-x = cat(x, s5; dims=2)
-print("d6.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.6.0"])
-print("d6.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.6.1"])
-x = cat(x, s4; dims=2)
-print("d7.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.7.0"])
-print("d7.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.7.1"])
-x = cat(x, s3; dims=2)
-print("d8.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.8.0"])
-print("d8.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.8.1"])
-print("d8.2 ")
-@time x = upsample(x) |> collect
-@time x = conv2d(model.convs["model.diffusion_model.output_blocks.8.2.conv"]..., x) |> collect
+start_time = time_ns()
+for (t, prev_t) ∈ zip([900, 800], [800, 700])
+    println("==== t = $t ====")
 
-x = cat(x, s2; dims=2)
-print("d9.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.9.0"])
-print("d9.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.9.1"])
-x = cat(x, s1; dims=2)
-print("d10.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.10.0"])
-print("d10.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.10.1"])
-x = cat(x, s0; dims=2)
-print("d11.0 ")
-@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.11.0"])
-print("d11.1 ")
-@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.11.1"])
+    f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
+    f = vcat(cos.(f), sin.(f))
 
-x_unet_d = x;
+    f = model.time_w1 * f + model.time_b1
+    f = f ./ (exp.(-f) .+ 1)
+    f = model.time_w2 * f + model.time_b2
+
+    # Indices:
+    # - n (batch)   1 ≤ n ≤ 2
+    # - i (Cin)     1 ≤ i ≤ 4
+    # - o (Cout)    1 ≤ o ≤ 320
+    # - y (y axis)  1 ≤ y ≤ 64
+    # - x (x axis)  1 ≤ x ≤ 64
+    # - η (Δy+2)    1 ≤ η ≤ 3
+    # - ξ (Δx+2)    1 ≤ ξ ≤ 3
+
+    latent = cat(latent_orig, latent_orig, dims = 1)
+    # \/
+    # /\ n i y x
+    ;
+
+
+    x = latent
+
+    print("0.0 ")
+    @time x = conv2d(model.convs["model.diffusion_model.input_blocks.0.0"]..., x) |> collect
+    s0 = x
+    print("1.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.1.0"])
+    print("1.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.1.1"])
+    s1 = x
+    print("2.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.2.0"])
+    print("2.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.2.1"])
+    s2 = x
+
+    print("3.0 ")
+    @time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.3.0.op"]..., x) |> collect
+    s3 = x
+    print("4.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.4.0"])
+    print("4.1 ")
+    s4 = x
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.4.1"])
+    print("5.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.5.0"])
+    print("5.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.5.1"])
+    s5 = x
+
+    print("6.0 ")
+    @time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.6.0.op"]..., x) |> collect
+    s6 = x
+    print("7.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.7.0"])
+    print("7.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.7.1"])
+    s7 = x
+    print("8.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.8.0"])
+    print("8.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.input_blocks.8.1"])
+    s8 = x
+
+    print("9.0 ")
+    @time x = conv2d_strided(model.convs["model.diffusion_model.input_blocks.9.0.op"]..., x) |> collect
+    s9 = x
+    print("10.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.10.0"])
+    s10 = x
+    print("11.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.input_blocks.11.0"]);
+    s11 = x
+
+    x_unet_e = x;
+
+    x = x_unet_e
+    print("m0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.middle_block.0"])
+    print("m1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.middle_block.1"])
+    print("m2 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.middle_block.2"])
+
+    x_unet_m = x;
+
+    x = x_unet_m
+    x = cat(x, s11; dims=2)
+    print("d0.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.0.0"])
+    x = cat(x, s10; dims=2)
+    print("d1.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.1.0"])
+    x = cat(x, s9; dims=2)
+    print("d2.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.2.0"])
+    print("d2.1 ")
+    @time x = upsample(x) |> collect
+    @time x = conv2d(model.convs["model.diffusion_model.output_blocks.2.1.conv"]..., x) |> collect
+
+    x = cat(x, s8; dims=2)
+    print("d3.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.3.0"])
+    print("d3.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.3.1"])
+    x = cat(x, s7; dims=2)
+    print("d4.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.4.0"])
+    print("d4.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.4.1"])
+    x = cat(x, s6; dims=2)
+    print("d5.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.5.0"])
+    print("d5.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.5.1"])
+    print("d5.2 ")
+    @time x = upsample(x) |> collect
+    @time x = conv2d(model.convs["model.diffusion_model.output_blocks.5.2.conv"]..., x) |> collect
+
+    x = cat(x, s5; dims=2)
+    print("d6.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.6.0"])
+    print("d6.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.6.1"])
+    x = cat(x, s4; dims=2)
+    print("d7.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.7.0"])
+    print("d7.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.7.1"])
+    x = cat(x, s3; dims=2)
+    print("d8.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.8.0"])
+    print("d8.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.8.1"])
+    print("d8.2 ")
+    @time x = upsample(x) |> collect
+    @time x = conv2d(model.convs["model.diffusion_model.output_blocks.8.2.conv"]..., x) |> collect
+
+    x = cat(x, s2; dims=2)
+    print("d9.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.9.0"])
+    print("d9.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.9.1"])
+    x = cat(x, s1; dims=2)
+    print("d10.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.10.0"])
+    print("d10.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.10.1"])
+    x = cat(x, s0; dims=2)
+    print("d11.0 ")
+    @time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.11.0"])
+    print("d11.1 ")
+    @time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.11.1"])
+
+    x_unet_d = x;
+
+    x = x_unet_d
+
+    x = groupnorm(model.g_final, model.t_final, 32, x)
+    x = x ./ (exp.(-x) .+ 1)
+    x = conv2d(model.wc_final, model.bc_final, x) |> collect
+    x_positive, x_negative = eachslice(x; dims=1)
+
+    config_scale = 8
+    x = config_scale .* (x_positive - x_negative) .+ x_negative
+
+    x_conf = x;
+
+
+
+    # ddpm_step(900, 800, latent_orig, x_conf)
+    latent_orig |> size |> println
+    x_conf |> size |> println
+
+    # latent_orig  [n, i, y, x]
+    # x_conf [i, y, x]
+    x_confi = insertdims(x_conf, dims=1)
+    # x_config = cat(x_confi, x_confi, dims=1)  # [n, i, y, x]
+    # x_config |> size
+    latent_orig = ddpm_step(t, prev_t, latent_orig, x_confi);
+end
+println("time taken: $((time_ns() - start_time) * 1e-9)")
+latent_orig
 
 # %% [markdown]
-# Interestingly, the values starts to differ slightly from the reference implementation.
-# Maybe because of floating operation error?
-
-# %%
-x = x_unet_d
-
-x = groupnorm(model.g_final, model.t_final, 32, x)
-x = x ./ (exp.(-x) .+ 1)
-x = conv2d(model.wc_final, model.bc_final, x) |> collect
-x_positive, x_negative = eachslice(x; dims=1)
-
-config_scale = 8
-x = config_scale .* (x_positive - x_negative) .+ x_negative
-
-x_conf = x
-
-# %%
-
-
-# ddpm_step(900, 800, latent_orig, x_conf)
-latent_orig |> size |> println
-x_conf |> size |> println
-
-# latent_orig  [n, i, y, x]
-# x_conf [i, y, x]
-x_confi = insertdims(x_conf, dims=1)
-# x_config = cat(x_confi, x_confi, dims=1)  # [n, i, y, x]
-# x_config |> size
-ddpm_step(900, 800, latent_orig, x_confi)
-
-# %% [markdown]
-# Float error gets noticable but still expected calculation.
+# 2 denoising steps and the result is correct! The problem is it's very slow...
