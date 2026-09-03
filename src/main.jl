@@ -586,11 +586,90 @@ x_unet_m = x;
 function upsample(x)
     # x [n, o, half_y, half_x]
     num_n, num_o, num_half_y, num_half_x = size(x)
-    @views (x[n, o, y ÷ 2, x ÷ 2] for n=1:num_n, o=1:num_o, y=1:(2 * num_half_y), x=1:(2 * num_half_x)) # [n, o, y, x]
+    @views [x[n, o, y ÷ 2 + 1, x_ ÷ 2 + 1] for n=1:num_n, o=1:num_o, y=0:(2 * num_half_y - 1), x_=0:(2 * num_half_x - 1)] # [n, o, y, x]
 end
 
 # %%
 x = x_unet_m
-cat(x, s11; dims=2)
+x = cat(x, s11; dims=2)
+print("d0.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.0.0"])
+x = cat(x, s10; dims=2)
+print("d1.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.1.0"])
+x = cat(x, s9; dims=2)
+print("d2.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.2.0"])
+print("d2.1 ")
+@time x = upsample(x) |> collect
+@time x = conv2d(model.convs["model.diffusion_model.output_blocks.2.1.conv"]..., x) |> collect
+
+x = cat(x, s8; dims=2)
+print("d3.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.3.0"])
+print("d3.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.3.1"])
+x = cat(x, s7; dims=2)
+print("d4.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.4.0"])
+print("d4.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.4.1"])
+x = cat(x, s6; dims=2)
+print("d5.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.5.0"])
+print("d5.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.5.1"])
+print("d5.2 ")
+@time x = upsample(x) |> collect
+@time x = conv2d(model.convs["model.diffusion_model.output_blocks.5.2.conv"]..., x) |> collect
+
+x = cat(x, s5; dims=2)
+print("d6.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.6.0"])
+print("d6.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.6.1"])
+x = cat(x, s4; dims=2)
+print("d7.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.7.0"])
+print("d7.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.7.1"])
+x = cat(x, s3; dims=2)
+print("d8.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.8.0"])
+print("d8.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.8.1"])
+print("d8.2 ")
+@time x = upsample(x) |> collect
+@time x = conv2d(model.convs["model.diffusion_model.output_blocks.8.2.conv"]..., x) |> collect
+
+x = cat(x, s2; dims=2)
+print("d9.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.9.0"])
+print("d9.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.9.1"])
+x = cat(x, s1; dims=2)
+print("d10.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.10.0"])
+print("d10.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.10.1"])
+x = cat(x, s0; dims=2)
+print("d11.0 ")
+@time x = calc_rblock(x, f, model.rblocks["model.diffusion_model.output_blocks.11.0"])
+print("d11.1 ")
+@time x = calc_ablock(x, c, model.ablocks["model.diffusion_model.output_blocks.11.1"])
+
+x_unet_d = x;
+
+# %% [markdown]
+# Interestingly, the values starts to differ slightly from the reference implementation.
+# Maybe because of floating operation error?
 
 # %%
+x = x_unet_d
+
+x = groupnorm(model.g_final, model.t_final, 32, x)
+x = x ./ (exp.(-x) .+ 1)
+x = conv2d(model.wc_final, model.bc_final, x) |> collect
+
+# %%
+Diffusion implementation finished!!

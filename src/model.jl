@@ -101,6 +101,10 @@ struct Model
     convs::Dict{String, Tuple{Array{Float32, 4}, Vector{Float32}}}
     rblocks::Dict{String, ResidualBlock}
     ablocks::Dict{String, AttentionBlock}
+    g_final::Vector{Float32}
+    t_final::Vector{Float32}
+    wc_final::Array{Float32, 4}
+    bc_final::Vector{Float32}
 end
 
 function validate_size(tensor, expected)
@@ -178,6 +182,9 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
             "model.diffusion_model.input_blocks.3.0.op",
             "model.diffusion_model.input_blocks.6.0.op",
             "model.diffusion_model.input_blocks.9.0.op",
+            "model.diffusion_model.output_blocks.2.1.conv",
+            "model.diffusion_model.output_blocks.5.2.conv",
+            "model.diffusion_model.output_blocks.8.2.conv",
        ]
     )
 
@@ -203,16 +210,28 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
             end
             ResidualBlock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2, wc3, bc3)
         end for (key, has_skip_connection) ∈ [
-            ("model.diffusion_model.input_blocks.1.0",  false),
-            ("model.diffusion_model.input_blocks.2.0",  false),
-            ("model.diffusion_model.input_blocks.4.0",  true ),
-            ("model.diffusion_model.input_blocks.5.0",  false),
-            ("model.diffusion_model.input_blocks.7.0",  true ),
-            ("model.diffusion_model.input_blocks.8.0",  false),
-            ("model.diffusion_model.input_blocks.10.0", false),
-            ("model.diffusion_model.input_blocks.11.0", false),
-            ("model.diffusion_model.middle_block.0",    false),
-            ("model.diffusion_model.middle_block.2",    false),
+            ("model.diffusion_model.input_blocks.1.0",   false),
+            ("model.diffusion_model.input_blocks.2.0",   false),
+            ("model.diffusion_model.input_blocks.4.0",   true ),
+            ("model.diffusion_model.input_blocks.5.0",   false),
+            ("model.diffusion_model.input_blocks.7.0",   true ),
+            ("model.diffusion_model.input_blocks.8.0",   false),
+            ("model.diffusion_model.input_blocks.10.0",  false),
+            ("model.diffusion_model.input_blocks.11.0",  false),
+            ("model.diffusion_model.middle_block.0",     false),
+            ("model.diffusion_model.middle_block.2",     false),
+            ("model.diffusion_model.output_blocks.0.0",  true ),
+            ("model.diffusion_model.output_blocks.1.0",  true ),
+            ("model.diffusion_model.output_blocks.2.0",  true ),
+            ("model.diffusion_model.output_blocks.3.0",  true ),
+            ("model.diffusion_model.output_blocks.4.0",  true ),
+            ("model.diffusion_model.output_blocks.5.0",  true ),
+            ("model.diffusion_model.output_blocks.6.0",  true ),
+            ("model.diffusion_model.output_blocks.7.0",  true ),
+            ("model.diffusion_model.output_blocks.8.0",  true ),
+            ("model.diffusion_model.output_blocks.9.0",  true ),
+            ("model.diffusion_model.output_blocks.10.0", true ),
+            ("model.diffusion_model.output_blocks.11.0", true ),
         ]
     )
 
@@ -264,8 +283,22 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
             "model.diffusion_model.input_blocks.7.1",
             "model.diffusion_model.input_blocks.8.1",
             "model.diffusion_model.middle_block.1",
+            "model.diffusion_model.output_blocks.3.1",
+            "model.diffusion_model.output_blocks.4.1",
+            "model.diffusion_model.output_blocks.5.1",
+            "model.diffusion_model.output_blocks.6.1",
+            "model.diffusion_model.output_blocks.7.1",
+            "model.diffusion_model.output_blocks.8.1",
+            "model.diffusion_model.output_blocks.9.1",
+            "model.diffusion_model.output_blocks.10.1",
+            "model.diffusion_model.output_blocks.11.1",
         ]
     )
+
+    g_final  = tensors["model.diffusion_model.out.0.weight"]
+    t_final  = tensors["model.diffusion_model.out.0.bias"]
+    wc_final = tensors["model.diffusion_model.out.2.weight"]
+    bc_final = tensors["model.diffusion_model.out.2.bias"]
 
     Model(
         n_ctx,
@@ -286,6 +319,10 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         convs,
         rblocks,
         ablocks,
+        g_final,
+        t_final,
+        wc_final,
+        bc_final,
     )
 end
 
