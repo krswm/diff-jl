@@ -1,3 +1,5 @@
+using Statistics
+
 using JSON
 using SafeTensors
 
@@ -88,6 +90,54 @@ function conv2d(wc, bc, latent)
     )  # [n, o, y, x]
 end
 
+# TODO: Exactly the same as `groupnorm` in main.jl. Unify with it.
+function groupnorm(g, t, num_groups, conv)
+    N, C, H, W = size(conv)
+    @assert C % num_groups == 0
+    size_of_group = C ÷ num_groups
+    
+    conv_mean = [
+        mean(
+            conv[n, group * size_of_group + igroup, y, x]
+            for igroup = 1:size_of_group, y = 1:H, x = 1:W
+        )
+        for n = 1:N, group = 0:(num_groups - 1)
+    ]
+
+    conv_var = [
+        var(
+            (
+                conv[n, group * size_of_group + igroup, y, x]
+                for igroup = 1:size_of_group, y = 1:H, x = 1:W
+            ), corrected = false
+        )
+        for n = 1:N, group = 0:(num_groups - 1)
+    ]
+
+    [
+        (g[o] * (conv[n, o, y, x] - conv_mean[n, (o - 1) ÷ size_of_group + 1]) / √(conv_var[n, (o - 1) ÷ size_of_group + 1] + 1f-5) + t[o])
+        for n = 1:N, o = 1:C, y = 1:H, x = 1:W
+    ]
+end
+
+function calc_drblock(latent, drblock)
+    num_n, num_o, num_y, num_x = size(latent)  # latent [n, o, y, x]
+
+    x = groupnorm(drblock.g1, drblock.t1, 32, latent)  # [n, o, y, x]
+    x = x ./ (exp.(-x) .+ 1)  # [n, o, y, x]
+    x = conv2d(drblock.wc1, drblock.bc1, x) |> collect  # [n, fo, y, x]
+    _, num_fo, _, _ = size(x)
+    x = groupnorm(drblock.g2, drblock.t2, 32, x)  # [n, fo, y, x]
+    x = x ./ (exp.(-x) .+ 1)  # [n, fo, y, x]
+    x = conv2d(drblock.wc2, drblock.bc2, x) |> collect  # [n, fo, y, x]
+    if num_o == num_fo
+        l = latent  # [n, fo, y, x]
+    else
+        l = conv2d(drblock.wc3, drblock.bc3, latent) |> collect  # [n, fo, y, x]
+    end
+    l .+ x  # [n, fo, y, x]
+end
+
 decref = load_safetensors("../../../Downloads/decref.safetensors")
 
 tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
@@ -101,5 +151,7 @@ x ./= 0.18215
 x = conv2d(model.dconvs["first_stage_model.post_quant_conv"]..., x) |> collect
 @assert size(x) == (1, 4, 64, 64)
 x = conv2d(model.dconvs["first_stage_model.decoder.conv_in"]..., x) |> collect
+@assert size(x) == (1, 512, 64, 64)
+x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_1"]) |> collect
 @assert size(x) == (1, 512, 64, 64)
 tshow(x)
