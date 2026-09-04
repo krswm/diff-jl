@@ -50,6 +50,19 @@ struct ResidualBlock
     bc3::Vector{Float32}
 end
 
+struct DecoderResidualBlock
+    g1::Vector{Float32}
+    t1::Vector{Float32}
+    wc1::Array{Float32, 4}
+    bc1::Vector{Float32}
+    g2::Vector{Float32}
+    t2::Vector{Float32}
+    wc2::Array{Float32, 4}
+    bc2::Vector{Float32}
+    wc3::Array{Float32, 4}
+    bc3::Vector{Float32}
+end
+
 struct AttentionBlock
     g1::Vector{Float32}
     t1::Vector{Float32}
@@ -80,6 +93,12 @@ struct AttentionBlock
     bc4::Vector{Float32}
 end
 
+struct DecoderAttentionBlock
+    g::Vector{Float32}
+    t::Vector{Float32}
+    b::Vector{Float32}
+end
+
 struct Model
     n_ctx::Int
     n_embd::Int
@@ -105,6 +124,10 @@ struct Model
     t_final::Vector{Float32}
     wc_final::Array{Float32, 4}
     bc_final::Vector{Float32}
+
+    dconvs::Dict{String, Tuple{Array{Float32, 4}, Vector{Float32}}}
+    drblocks::Dict{String, DecoderResidualBlock}
+    dablocks::Dict{String, DecoderAttentionBlock}
 end
 
 function validate_size(tensor, expected)
@@ -188,6 +211,17 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
        ]
     )
 
+    dconvs = Dict(
+        key => (tensors["$key.weight"], tensors["$key.bias"]) for key ∈ [
+            "first_stage_model.post_quant_conv",
+            "first_stage_model.decoder.conv_in",
+            "first_stage_model.decoder.up.3.upsample.conv",
+            "first_stage_model.decoder.up.2.upsample.conv",
+            "first_stage_model.decoder.up.1.upsample.conv",
+            "first_stage_model.decoder.conv_out",
+       ]
+    )
+
     rblocks = Dict(
         key => begin
             g1  = tensors["$key.in_layers.0.weight"]
@@ -232,6 +266,43 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
             ("model.diffusion_model.output_blocks.9.0",  true ),
             ("model.diffusion_model.output_blocks.10.0", true ),
             ("model.diffusion_model.output_blocks.11.0", true ),
+        ]
+    )
+
+    drblocks = Dict(
+        key => begin
+            g1  = tensors["$key.norm1.weight"]
+            t1  = tensors["$key.norm1.bias"]
+            wc1 = tensors["$key.conv1.weight"]
+            bc1 = tensors["$key.conv1.bias"]
+            g2  = tensors["$key.norm2.weight"]
+            t2  = tensors["$key.norm2.bias"]
+            wc2 = tensors["$key.conv2.weight"]
+            bc2 = tensors["$key.conv2.bias"]
+            if has_skip_connection
+                wc3 = tensors["$key.nin_shortcut.weight"]
+                bc3 = tensors["$key.nin_shortcut.bias"]
+            else
+                # Dummies
+                wc3 = zeros(0, 0, 0, 0)
+                bc3 = zeros(0)
+            end
+            DecoderResidualBlock(g1, t1, wc1, bc1, g2, t2, wc2, bc2, wc3, bc3)
+        end for (key, has_skip_connection) ∈ [
+            ("first_stage_model.decoder.mid.block_1", false),
+            ("first_stage_model.decoder.mid.block_2", false),
+            ("first_stage_model.decoder.up.3.block.0", false),
+            ("first_stage_model.decoder.up.3.block.1", false),
+            ("first_stage_model.decoder.up.3.block.2", false),
+            ("first_stage_model.decoder.up.2.block.0", false),
+            ("first_stage_model.decoder.up.2.block.1", false),
+            ("first_stage_model.decoder.up.2.block.2", false),
+            ("first_stage_model.decoder.up.1.block.0", true),
+            ("first_stage_model.decoder.up.1.block.1", false),
+            ("first_stage_model.decoder.up.1.block.2", false),
+            ("first_stage_model.decoder.up.0.block.0", true),
+            ("first_stage_model.decoder.up.0.block.1", false),
+            ("first_stage_model.decoder.up.0.block.2", false),
         ]
     )
 
@@ -295,6 +366,17 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         ]
     )
 
+    dablocks = Dict(
+        key => begin
+            g = tensors["$key.norm.weight"]
+            t = tensors["$key.norm.bias"]
+            b = tensors["$key.proj_out.bias"]
+            DecoderAttentionBlock(g, t, b)
+        end for key ∈ [
+            "first_stage_model.decoder.mid.attn_1"
+        ]
+    )
+
     g_final  = tensors["model.diffusion_model.out.0.weight"]
     t_final  = tensors["model.diffusion_model.out.0.bias"]
     wc_final = tensors["model.diffusion_model.out.2.weight"]
@@ -323,6 +405,9 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         t_final,
         wc_final,
         bc_final,
+        dconvs,
+        drblocks,
+        dablocks,
     )
 end
 
