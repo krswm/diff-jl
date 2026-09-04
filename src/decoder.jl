@@ -122,12 +122,12 @@ function groupnorm(g, t, num_groups, conv)
 end
 
 function normnorm(x, g, t, x_mean, x_var)
-    # x [xy, j]
+    # x [xy]
     # g (scalar)
     # t (scalar)
     # x_mean (scalar)
     # x_var (scalar)
-    g .* (x .- x_mean) ./ √(x_var + oftype(x_var, 1.0f-5)) .+ t  # [xy, j]
+    g .* (x .- x_mean) ./ √(x_var + oftype(x_var, 1.0f-5)) .+ t  # [xy]
 end
 
 function groupnorm_(x, g, t, num_g)
@@ -140,13 +140,15 @@ function groupnorm_(x, g, t, num_g)
     # j: Index inside a group
     num_j = num_o ÷ num_g
 
-    x = reshape(x, (num_xy, num_j, num_g))  # [xy, j, g]
-    x = eachslice(x, dims=3)  # [g][xy, j]
-    x_mean = mean.(x)  # [g]
-    x_var = var.(x)  # [g]
-    x = normnorm.(x_, g, t, x_mean, x_var)  # [g][xy, j]
-    x = stack(x)  # [xy, j, g]
-    reshape(x, (num_xy, num_o))  # [xy, o]
+    y = reshape(x, (num_xy, num_j, num_g))  # [xy, j, g]
+    y = eachslice(y, dims=3)  # [g][xy, j]
+    y_mean = mean.(y)  # [g]
+    y_mean = [y_mean[(o - 1) ÷ num_j + 1] for o ∈ 1:num_o]  # [o]
+    y_var = var.(y)  # [g]
+    y_var = [y_var[(o - 1) ÷ num_j + 1] for o ∈ 1:num_o]  # [o]
+    x = eachslice(x, dims=2)  # [o][xy]
+    x = normnorm.(x, g, t, y_mean, y_var)  # [o][xy]
+    stack(x)  # [xy, o]
 end
 
 function layer_norm(x, g, t)
@@ -173,59 +175,57 @@ end
 
 # Numerically stable softmax
 function softmax(x)
-    x = exp.(x .- maximum(x))
-    x / sum(x)
+    # x [i]
+    x = exp.(x .- maximum(x))  # [i]
+    x / sum(x)  # [i]
 end
 
 function calc_dablock(x, ablock)
-    num_n, num_o, num_y, num_x = size(x)
-    x |> size |> println
-    num_n |> println
-    num_o |> println
-    num_y |> println
-    num_x |> println
+    # x [n, o, y, x]
+    x = permutedims(x, (4, 3, 2, 1))  # [x, y, o, n]
+
+    num_x, num_y, num_o, num_n = size(x)
     num_xy = num_x * num_y
     num_h = 1  # Number of heads
     num_j = num_o ÷ num_h  # Size of a head
 
-    # x [n, o, y, x]
-    x = permutedims(x, (4, 3, 2, 1))  # [x, y, o, n]  # Allocates?
-    x = eachslice(x, dims=4)  # [n][x, y, o]  # Doesn't allocate?
-    x |> size |> println
-    x = groupnorm_.(x, Ref(ablock.g), Ref(ablock.t), 32)  # [n][x, y, o]
+    x = reshape(x, (num_xy, num_o, num_n))  # [xy, o, n]
+    x = eachslice(x, dims=3)  # [n][xy, o]
+
+    # g [o]
+    # t [o]
+    x = groupnorm_.(x, Ref(ablock.g), Ref(ablock.t), 32)  # [n][xy, o]
+
+    print("\x1b[91m"); x[1] |> tshow; print("\x1b[39m")
+
+    # w1 [o, 3o]
+    # b1 [1, 3o]
+    # It's a little unfortunate that I have to use xᵀ Wᵀ + bᵀ for an affine transformation
+    # because of Julia using column-major (leftmost index changes the fastest)
+    # (If I understand it correctly, though. Maybe I'm missing something and totally wrong)
+    # rather than W x + b that is more "intuitive" for me
+    # as a person that learn it with the latter form in linear algebra class.
+    # 1 ≤ 3o ≤ 3 * num_o
+    x = [x_ * ablock.w1 .+ ablock.b1 for x_ ∈ x]  # [n][xy, 3o]
+    print("\x1b[92m"); x[1] |> tshow; print("\x1b[39m")
+    # 1 ≤ qkv ≤ 3
+    x = reshape.(x, Ref((num_xy, num_j, num_h, 3)))  # [n][xy, j, h, qkv]
+    q = @views [x_[:, :, num_h, 1] for h=1:num_h, x_ ∈ x]  #[h, n][xy, j]
+    k = @views [x_[:, :, num_h, 2] for h=1:num_h, x_ ∈ x]  #[h, n][xy', j]
+    v = @views [x_[:, :, num_h, 3] for h=1:num_h, x_ ∈ x]  #[h, n][xy, j]
+    qk = k .* transpose.(q) ./ √Float32(num_j)  # [h, n][xy', xy]
+    print("\x1b[93m"); qk[1, 1] |> tshow; print("\x1b[39m")
+    qk = [stack(softmax(qk__) for qk__ ∈ eachslice(qk_, dims=2)) for qk_ ∈ qk]  # [h, n][xy', xy]
+    print("\x1b[94m"); qk[1, 1] |> tshow; print("\x1b[39m")
+    x = transpose(qk) .* v  # [h, n][xy, j]
+    print("\x1b[95m"); x[1, 1] |> tshow; print("\x1b[39m")
+    x = [stack(x[:, n]) for n=1:num_n]  # [n][xy, j, h]
     x |> size |> println
     x[1] |> size |> println
-    num_n |> println
-    num_o |> println
-    num_y |> println
-    num_x |> println
-    @assert size(x) == (num_n,)
-    @assert size(x[1]) == (num_x, num_y, num_o)
-    x = [
-        reshape(_x, (num_xy, num_o)) for _x ∈ x
-    ]  # [n][xy, o]
-    exit(0)
-
-
-
-    n_embd = num_o
-    n_head = 1  # <- This is different from U-net's self attentions (n_head=8).
-    size_head = n_embd ÷ n_head
-    x1 = [
-        begin
-            y = ablock.w1 * y .+ ablock.b1
-            qq = y[1:n_embd, :]
-            kk = y[(n_embd + 1):(2 * n_embd), :]
-            vv = y[(2 * n_embd + 1):(3 * n_embd), :]
-            q = (qq[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
-            k = (kk[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
-            v = (vv[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
-            kq = transpose.(k) .* q ./ sqrt(Float32(size_head))
-            kqq = [hcat([softmax(kq__) for kq__ in eachcol(kq_)]...) for kq_ in kq]
-            v .* kqq
-        end
-        for y ∈ x
-    ]  # [n][head][ihead, xy]
+    x = reshape.(x, Ref((num_xy, num_o)))  # [n][xy, o]
+    x = [x_ * ablock.w2 .+ ablock.b2 for x_ ∈ x]  # [n][xy, o]
+    print("\x1b[96m"); x[1] |> tshow; print("\x1b[39m")
+    exit()
 
     # x1  # [n][head][ihead, xy]
     a1 = [x1[n][head][ihead, xy] for n=1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]  # [n, xy, ihead, head]

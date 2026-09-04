@@ -97,9 +97,9 @@ struct DecoderAttentionBlock
     g::Vector{Float32}
     t::Vector{Float32}
     w1::Matrix{Float32}
-    b1::Vector{Float32}
+    b1::Matrix{Float32}
     w2::Matrix{Float32}
-    b2::Vector{Float32}
+    b2::Matrix{Float32}
 end
 
 struct Model
@@ -381,16 +381,20 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
             )
             @assert size(w1) == (1536, 512, 1, 1)
             w1 = reshape(w1, (1536, 512))
+            w1 = permutedims(w1, (2, 1))
             b1  = cat(
                 tensors["$key.q.bias"],
                 tensors["$key.k.bias"],
                 tensors["$key.v.bias"],
                 dims=1,
             )
+            b1 = insertdims(b1, dims=1)
             w2 = tensors["$key.proj_out.weight"]
             @assert size(w2) == (512, 512, 1, 1)
             w2 = reshape(w2, (512, 512))
+            w2 = permutedims(w2, (2, 1))
             b2 = tensors["$key.proj_out.bias"]
+            b2 = insertdims(b2, dims=1)
             DecoderAttentionBlock(g, t, w1, b1, w2, b2)
         end for key ∈ [
             "first_stage_model.decoder.mid.attn_1"
