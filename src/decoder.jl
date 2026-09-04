@@ -174,68 +174,63 @@ function calc_drblock(latent, drblock)
 end
 
 # Numerically stable softmax
-function softmax(x)
-    # x [i]
-    x = exp.(x .- maximum(x))  # [i]
-    x / sum(x)  # [i]
+function softmax(x; dims=2)
+    x = exp.(x .- maximum(x, dims=dims))
+    x ./ sum(x, dims=dims)
 end
 
-function calc_dablock(x, ablock)
-    # x [n, o, y, x]
-    x = permutedims(x, (4, 3, 2, 1))  # [x, y, o, n]
-
-    num_x, num_y, num_o, num_n = size(x)
-    num_xy = num_x * num_y
-    num_h = 1  # Number of heads
-    num_j = num_o ÷ num_h  # Size of a head
-
-    x = reshape(x, (num_xy, num_o, num_n))  # [xy, o, n]
-    x = eachslice(x, dims=3)  # [n][xy, o]
-
-    # g [o]
-    # t [o]
-    x = groupnorm_.(x, Ref(ablock.g), Ref(ablock.t), 32)  # [n][xy, o]
-
-    print("\x1b[91m"); x[1] |> tshow; print("\x1b[39m")
-
+function self_attention(x, w1, b1, w2, b2, num_h)
+    # x [xy, o]
     # w1 [o, 3o]
     # b1 [1, 3o]
+    # w2 [o, o]
+    # b2 [1, o]
     # It's a little unfortunate that I have to use xᵀ Wᵀ + bᵀ for an affine transformation
     # because of Julia using column-major (leftmost index changes the fastest)
     # (If I understand it correctly, though. Maybe I'm missing something and totally wrong)
     # rather than W x + b that is more "intuitive" for me
     # as a person that learn it with the latter form in linear algebra class.
+    num_xy, num_o = size(x)
+    num_j = num_o ÷ num_h  # Size of a head
+
     # 1 ≤ 3o ≤ 3 * num_o
-    x = [x_ * ablock.w1 .+ ablock.b1 for x_ ∈ x]  # [n][xy, 3o]
-    print("\x1b[92m"); x[1] |> tshow; print("\x1b[39m")
+    x = x * w1 .+ b1  # [xy, 3o]
     # 1 ≤ qkv ≤ 3
-    x = reshape.(x, Ref((num_xy, num_j, num_h, 3)))  # [n][xy, j, h, qkv]
-    q = @views [x_[:, :, num_h, 1] for h=1:num_h, x_ ∈ x]  #[h, n][xy, j]
-    k = @views [x_[:, :, num_h, 2] for h=1:num_h, x_ ∈ x]  #[h, n][xy', j]
-    v = @views [x_[:, :, num_h, 3] for h=1:num_h, x_ ∈ x]  #[h, n][xy, j]
-    qk = k .* transpose.(q) ./ √Float32(num_j)  # [h, n][xy', xy]
-    print("\x1b[93m"); qk[1, 1] |> tshow; print("\x1b[39m")
-    qk = [stack(softmax(qk__) for qk__ ∈ eachslice(qk_, dims=2)) for qk_ ∈ qk]  # [h, n][xy', xy]
-    print("\x1b[94m"); qk[1, 1] |> tshow; print("\x1b[39m")
-    x = transpose(qk) .* v  # [h, n][xy, j]
-    print("\x1b[95m"); x[1, 1] |> tshow; print("\x1b[39m")
-    x = [stack(x[:, n]) for n=1:num_n]  # [n][xy, j, h]
-    x |> size |> println
-    x[1] |> size |> println
-    x = reshape.(x, Ref((num_xy, num_o)))  # [n][xy, o]
-    x = [x_ * ablock.w2 .+ ablock.b2 for x_ ∈ x]  # [n][xy, o]
-    print("\x1b[96m"); x[1] |> tshow; print("\x1b[39m")
-    exit()
+    x = reshape(x, (num_xy, num_j, num_h, 3))  # [xy, j, h, qkv]
+    q = eachslice(x[:, :, :, 1], dims=3)  #[h][xy, j]
+    k = eachslice(x[:, :, :, 2], dims=3)  #[h][xy', j]
+    v = eachslice(x[:, :, :, 3], dims=3)  #[h][xy, j]
+    qk = @. q * transpose.(k) / √Float32(num_j)  # [h][xy, xy']
+    qk = softmax.(qk, dims=2)  # [h][xy', xy]
+    x = qk .* v  # [h][xy, j]
+    x = stack(x)  # [xy, j, h]
+    x = reshape(x, (num_xy, num_o))  # [xy, o]
+    x * w2 .+ b2  # [xy, o]
+end
 
-    # x1  # [n][head][ihead, xy]
-    a1 = [x1[n][head][ihead, xy] for n=1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]  # [n, xy, ihead, head]
-    a2 = reshape(a1, (num_n, num_xy, num_o))  # [n, xy, o]
-    a3 = (a2[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
-    a4 = Ref(ablock.w2) .* a3 .+ Ref(ablock.b2)  # [n, xy][o]
-    d = [a4[n, xy][o] for n=1:num_n, o=1:num_o, xy=1:num_xy]  # [n, o, xy]
-    d = reshape(d, (num_n, num_o, num_x, num_y))  # [n, o, x, y]
+function calc_dablock(x, dablock)
+    # x [n, o, y, x]
+    @time x = permutedims(x, (4, 3, 2, 1))  # [x, y, o, n]
 
-    latent_ .+ d
+    num_x, num_y, num_o, num_n = size(x)
+    num_xy = num_x * num_y
+
+    @time x = reshape(x, (num_xy, num_o, num_n))  # [xy, o, n]
+    @time x = eachslice(x, dims=3)  # [n][xy, o]
+
+    y = x
+
+    # g [o]
+    # t [o]
+    @time x = groupnorm_.(x, Ref(dablock.g), Ref(dablock.t), 32)  # [n][xy, o]
+
+    @time x = self_attention.(x, Ref(dablock.w1), Ref(dablock.b1), Ref(dablock.w2), Ref(dablock.b2), 1)  # [n][xy, o]
+
+    @time y += x  # [n][xy, o]
+    
+    @time y = stack(y)  # [xy, o, n]
+    @time y = reshape(y, (num_x, num_y, num_o, num_n))
+    @time y = permutedims(y, (4, 3, 2, 1))
 end
 
 function upsample(x)
@@ -264,13 +259,8 @@ x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_1"])
 @assert size(x) == (1, 512, 64, 64)
 x = calc_dablock(x, model.dablocks["first_stage_model.decoder.mid.attn_1"])
 @assert size(x) == (1, 512, 64, 64)
-println(x[1, 31, 11, 21])
-exit(0)
 x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_2"])
 @assert size(x) == (1, 512, 64, 64)
-
-tshow(x)
-exit(0)
 
 x = calc_drblock(x, model.drblocks["first_stage_model.decoder.up.3.block.0"])
 @assert size(x) == (1, 512, 64, 64)
