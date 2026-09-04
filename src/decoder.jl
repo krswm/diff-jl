@@ -7,6 +7,7 @@ include("model.jl")
 using .Model
 
 function tshow(x)
+    println(size(x))
     show(IOContext(stdout, :limit => true), "text/plain", x)
     println()
 end
@@ -155,6 +156,7 @@ function calc_dablock(x, ablock)
     latent_ = x  # [n, o, y, x]
     x = groupnorm(ablock.g, ablock.t, 32, x)  # [n, o, y, x]
 
+
     x = permutedims(x, (1, 2, 4, 3))  # [n, o, x, y]
     x = reshape(x, (num_n, num_o, num_xy))  # [n, o, xy]
     x = eachslice(x; dims=(1, 3))  #[n, xy][o]
@@ -162,11 +164,11 @@ function calc_dablock(x, ablock)
     x = [[x[n, xy][o] for o=1:num_o, xy=1:num_xy] for n=1:num_n]  # [n][o, xy]
 
     n_embd = num_o
-    n_head = 8
+    n_head = 1  # <- This is different from U-net's self attentions (n_head=8).
     size_head = n_embd ÷ n_head
     x1 = [
         begin
-            y = ablock.w1 * y + ablock.b1
+            y = ablock.w1 * y .+ ablock.b1
             qq = y[1:n_embd, :]
             kk = y[(n_embd + 1):(2 * n_embd), :]
             vv = y[(2 * n_embd + 1):(3 * n_embd), :]
@@ -188,6 +190,7 @@ function calc_dablock(x, ablock)
     x2 = [a4[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
     d = [x2[n, xy, o] for n=1:num_n, o=1:num_o, xy=1:num_xy]  # [n, o, xy]
     d = reshape(d, (num_n, num_o, num_x, num_y))  # [n, o, x, y]
+
     latent_ .+ d
 end
 

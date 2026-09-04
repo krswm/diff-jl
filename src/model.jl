@@ -373,17 +373,19 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         key => begin
             g = tensors["$key.norm.weight"]
             t = tensors["$key.norm.bias"]
-            w1  = vcat(
+            w1  = cat(
                 tensors["$key.q.weight"],
                 tensors["$key.k.weight"],
-                tensors["$key.v.weight"],
+                tensors["$key.v.weight"];
+                dims=1,
             )
             @assert size(w1) == (1536, 512, 1, 1)
             w1 = reshape(w1, (1536, 512))
-            b1  = vcat(
+            b1  = cat(
                 tensors["$key.q.bias"],
                 tensors["$key.k.bias"],
                 tensors["$key.v.bias"],
+                dims=1,
             )
             w2 = tensors["$key.proj_out.weight"]
             @assert size(w2) == (512, 512, 1, 1)
