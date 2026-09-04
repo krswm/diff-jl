@@ -120,6 +120,10 @@ function groupnorm(g, t, num_groups, conv)
     ]
 end
 
+function layer_norm(x, g, t)
+    g .* (x .- mean(x)) ./ √(var(x, corrected = false) + 1f-5) + t
+end
+
 function calc_drblock(latent, drblock)
     num_n, num_o, num_y, num_x = size(latent)  # latent [n, o, y, x]
 
@@ -138,6 +142,55 @@ function calc_drblock(latent, drblock)
     l .+ x  # [n, fo, y, x]
 end
 
+# Numerically stable softmax
+function softmax(x)
+    x = exp.(x .- maximum(x))
+    x / sum(x)
+end
+
+function calc_dablock(x, ablock)
+    num_n, num_o, num_y, num_x = size(x)
+    num_xy = num_x * num_y
+
+    latent_ = x  # [n, o, y, x]
+    x = groupnorm(ablock.g, ablock.t, 32, x)  # [n, o, y, x]
+
+    x = permutedims(x, (1, 2, 4, 3))  # [n, o, x, y]
+    x = reshape(x, (num_n, num_o, num_xy))  # [n, o, xy]
+    x = eachslice(x; dims=(1, 3))  #[n, xy][o]
+    y = [[x[n, xy][o] for xy=1:num_xy, o=1:num_o] for n=1:num_n]  # [n][xy, o]
+    x = [[x[n, xy][o] for o=1:num_o, xy=1:num_xy] for n=1:num_n]  # [n][o, xy]
+
+    n_embd = num_o
+    n_head = 8
+    size_head = n_embd ÷ n_head
+    x1 = [
+        begin
+            y = ablock.w1 * y + ablock.b1
+            qq = y[1:n_embd, :]
+            kk = y[(n_embd + 1):(2 * n_embd), :]
+            vv = y[(2 * n_embd + 1):(3 * n_embd), :]
+            q = (qq[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+            k = (kk[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+            v = (vv[((i - 1) * size_head + 1):(i * size_head), :] for i = 1:n_head)
+            kq = transpose.(k) .* q ./ sqrt(Float32(size_head))
+            kqq = [hcat([softmax(kq__) for kq__ in eachcol(kq_)]...) for kq_ in kq]
+            v .* kqq
+        end
+        for y ∈ x
+    ]  # [n][head][ihead, xy]
+
+    # x1  # [n][head][ihead, xy]
+    a1 = [x1[n][head][ihead, xy] for n=1:num_n, xy=1:num_xy, ihead=1:size_head, head=1:n_head]  # [n, xy, ihead, head]
+    a2 = reshape(a1, (num_n, num_xy, num_o))  # [n, xy, o]
+    a3 = (a2[n, xy, :] for n=1:num_n, xy=1:num_xy)  # [n, xy][o]
+    a4 = Ref(ablock.w2) .* a3 .+ Ref(ablock.b2)  # [n, xy][o]
+    x2 = [a4[n, xy][o] for n=1:num_n, xy=1:num_xy, o=1:num_o]  # [n, xy, o]
+    d = [x2[n, xy, o] for n=1:num_n, o=1:num_o, xy=1:num_xy]  # [n, o, xy]
+    d = reshape(d, (num_n, num_o, num_x, num_y))  # [n, o, x, y]
+    latent_ .+ d
+end
+
 decref = load_safetensors("../../../Downloads/decref.safetensors")
 
 tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
@@ -152,6 +205,8 @@ x = conv2d(model.dconvs["first_stage_model.post_quant_conv"]..., x) |> collect
 @assert size(x) == (1, 4, 64, 64)
 x = conv2d(model.dconvs["first_stage_model.decoder.conv_in"]..., x) |> collect
 @assert size(x) == (1, 512, 64, 64)
-x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_1"]) |> collect
+x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_1"])
+@assert size(x) == (1, 512, 64, 64)
+x = calc_dablock(x, model.dablocks["first_stage_model.decoder.mid.attn_1"])
 @assert size(x) == (1, 512, 64, 64)
 tshow(x)

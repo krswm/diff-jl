@@ -96,7 +96,10 @@ end
 struct DecoderAttentionBlock
     g::Vector{Float32}
     t::Vector{Float32}
-    b::Vector{Float32}
+    w1::Matrix{Float32}
+    b1::Vector{Float32}
+    w2::Matrix{Float32}
+    b2::Vector{Float32}
 end
 
 struct Model
@@ -370,8 +373,23 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         key => begin
             g = tensors["$key.norm.weight"]
             t = tensors["$key.norm.bias"]
-            b = tensors["$key.proj_out.bias"]
-            DecoderAttentionBlock(g, t, b)
+            w1  = vcat(
+                tensors["$key.q.weight"],
+                tensors["$key.k.weight"],
+                tensors["$key.v.weight"],
+            )
+            @assert size(w1) == (1536, 512, 1, 1)
+            w1 = reshape(w1, (1536, 512))
+            b1  = vcat(
+                tensors["$key.q.bias"],
+                tensors["$key.k.bias"],
+                tensors["$key.v.bias"],
+            )
+            w2 = tensors["$key.proj_out.weight"]
+            @assert size(w2) == (512, 512, 1, 1)
+            w2 = reshape(w2, (512, 512))
+            b2 = tensors["$key.proj_out.bias"]
+            DecoderAttentionBlock(g, t, w1, b1, w2, b2)
         end for key ∈ [
             "first_stage_model.decoder.mid.attn_1"
         ]
