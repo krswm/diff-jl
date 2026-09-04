@@ -14,7 +14,7 @@ cumprod_αs = cumprod(αs)
 function ddpm_step(curr_t, prev_t, xₜ, ϵ)
     # Julia is 1-based. scheduler's t is 0-based.
     curr_α_bar = cumprod_αs[curr_t + 1]
-    prev_α_bar = prev_t ≥ 0 ? cumprod_αs[prev_t + 1] : 0.0f0
+    prev_α_bar = prev_t ≥ 0 ? cumprod_αs[prev_t + 1] : 1.0f0
     αₜ = curr_α_bar / prev_α_bar
 
     # References: "Denoising Diffusion Probabilistic Models"
