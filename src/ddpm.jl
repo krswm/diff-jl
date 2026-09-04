@@ -22,9 +22,9 @@ function ddpm_step(curr_t, prev_t, xₜ, ϵ)
 
     x₀ = (xₜ .- √(1 - curr_α_bar) * ϵ) ./ √curr_α_bar
     μₜ = √prev_α_bar * (1 - αₜ) / (1 - curr_α_bar) * x₀ + √αₜ * (1 - prev_α_bar) / (1 - curr_α_bar) * xₜ
-    noise = rand42["n$curr_t"]  # TODO: Use random generator later.
-    variance = (1 - prev_α_bar) / (1 - curr_α_bar) * (1 - αₜ)
     if curr_t > 0
+        noise = rand42["n$curr_t"]  # TODO: Use random generator later.
+        variance = (1 - prev_α_bar) / (1 - curr_α_bar) * (1 - αₜ)
         result = μₜ + √variance * noise
     else
         result = μₜ
