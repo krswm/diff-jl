@@ -483,20 +483,7 @@ function upsample(x)
 end
 
 # %%
-# Pre-sampled random tensors
-# The diffusion model requires a random noise,
-# however, I want the whole tensor calculation deterministic
-# so that I can compare the result with the reference implementation.
-# I extracted the random tensors from reference implementation 
-# (https://github.com/hkproj/pytorch-stable-diffusion, excellent explanation video!)
-# and save it to a Safetensors file.
-# I'll use genuine random number generator in Julia later.
-rand42 = load_safetensors(ARGS2)
-
-latent_orig = rand42["l"]
-
-start_time = time_ns()
-for (t, prev_t) ∈ zip([900, 800], [800, 700])
+function denoise(latent_orig, c, t, prev_t)
     println("==== t = $t ====")
 
     f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))
@@ -680,10 +667,33 @@ for (t, prev_t) ∈ zip([900, 800], [800, 700])
     x_confi = insertdims(x_conf, dims=1)
     # x_config = cat(x_confi, x_confi, dims=1)  # [n, i, y, x]
     # x_config |> size
-    latent_orig = ddpm_step(t, prev_t, latent_orig, x_confi);
+    ddpm_step(t, prev_t, latent_orig, x_confi)
 end
-println("time taken: $((time_ns() - start_time) * 1e-9)")
-latent_orig
 
-# %% [markdown]
-# 2 denoising steps and the result is correct! The problem is it's very slow...
+# %%
+# Pre-sampled random tensors
+# The diffusion model requires a random noise,
+# however, I want the whole tensor calculation deterministic
+# so that I can compare the result with the reference implementation.
+# I extracted the random tensors from reference implementation 
+# (https://github.com/hkproj/pytorch-stable-diffusion, excellent explanation video!)
+# and save it to a Safetensors file.
+# I'll use genuine random number generator in Julia later.
+rand42 = load_safetensors(ARGS2)
+
+latent_orig = rand42["l"]
+
+start_time = time_ns()
+latent_orig = denoise(latent_orig, c, 900, 800)
+latent_orig = denoise(latent_orig, c, 800, 700)
+latent_orig = denoise(latent_orig, c, 700, 600)
+latent_orig = denoise(latent_orig, c, 600, 500)
+latent_orig = denoise(latent_orig, c, 500, 400)
+latent_orig = denoise(latent_orig, c, 400, 300)
+latent_orig = denoise(latent_orig, c, 300, 200)
+latent_orig = denoise(latent_orig, c, 200, 100)
+latent_orig = denoise(latent_orig, c, 100,   0)
+latent_orig = denoise(latent_orig, c,   0, -100)
+println("time taken: $((time_ns() - start_time) * 1e-9)")
+
+latent_orig
