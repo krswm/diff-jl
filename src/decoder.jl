@@ -121,42 +121,32 @@ function groupnorm(g, t, num_groups, conv)
     ]
 end
 
-function groupnorm_(conv, g, t, num_groups)
-    W, H, C = size(conv)
-    @assert C % num_groups == 0
-    size_of_group = C ÷ num_groups
+function normnorm(x, g, t, x_mean, x_var)
+    # x [xy, j]
+    # g (scalar)
+    # t (scalar)
+    # x_mean (scalar)
+    # x_var (scalar)
+    g .* (x .- x_mean) ./ √(x_var + oftype(x_var, 1.0f-5)) .+ t  # [xy, j]
+end
 
-    # conv [x, y, o]
-    @assert size(conv) == (W, H, C)
+function groupnorm_(x, g, t, num_g)
+    # x [xy, o]
     # g [o]
-    @assert size(g) == (C,)
     # t [o]
-    @assert size(t) == (C,)
-    # g: index of group
-    # j: index inside group
-    conv_ = reshape(conv, (W, H, size_of_group, num_groups)) # [x, y, j, g] # Doesn't allocate?
-    @assert size(conv_) == (W, H, size_of_group, num_groups)
-    conv_ = eachslice(conv_, dims=4)  # [g][x, y, j]  # Doesn't allocate?
-    @assert size(conv_) == (num_groups,)
-    @assert size(conv_[1]) == (W, H, size_of_group)
-    conv_mean = @. mean(conv_)  # [g]
-    @assert size(conv_mean) == (num_groups,)
-    conv_mean_ = @views [conv_mean[(o - 1) ÷ num_groups + 1] for o=1:C]  # [o]
-    @assert size(conv_mean_) == (C,)
-    conv_var = @. var(conv_)  # [g]
-    @assert size(conv_var) == (num_groups,)
-    conv_var_ = @views [conv_var[(o - 1) ÷ num_groups + 1] for o=1:C]  # [o]
-    @assert size(conv_var_) == (C,)
+    # `num_g`: number of groups
+    num_xy, num_o = size(x)
+    @assert num_o % num_g == 0
+    # j: Index inside a group
+    num_j = num_o ÷ num_g
 
-    conv__ = eachslice(conv, dims=3)  # [o][x, y]
-    @assert size(conv__) == (C,)
-    @assert size(conv__[1]) == (W, H)
-    x = g .* (conv__ .- conv_mean_) ./ .√(conv_var_ .+ 1.0f-5) .+ t  # [o][x, y]
-    @assert size(x) == (C,)
-    @assert size(x[1]) == (W, H)
-    x = stack(x)  # [x, y, o]
-    @assert size(x) == (W, H, C)
-    x
+    x = reshape(x, (num_xy, num_j, num_g))  # [xy, j, g]
+    x = eachslice(x, dims=3)  # [g][xy, j]
+    x_mean = mean.(x)  # [g]
+    x_var = var.(x)  # [g]
+    x = normnorm.(x_, g, t, x_mean, x_var)  # [g][xy, j]
+    x = stack(x)  # [xy, j, g]
+    reshape(x, (num_xy, num_o))  # [xy, o]
 end
 
 function layer_norm(x, g, t)
