@@ -41,19 +41,18 @@ function conv2d_new(x, w)
     # Toeplitz matrices
     w₀ = @views [1 ≤ y - x + 1 ≤ num_xₒ ? zpw[y - x + 1, 3] : 0 for x=1:num_x, y=1:num_xₒ]  # [x, xₒ]
     w₁ = @views [1 ≤ y - x + 1 ≤ num_xₒ ? zpw[y - x + 1, 2] : 0 for x=1:num_x, y=1:num_xₒ]  # [x, xₒ]
-    w₂ = @views [1 ≤ y - x + 1 ≤ num_xₒ ? zpw[y - x + 1, 1] : 0 for x=1:num_x, y=1:num_xₒ]  # [x, xₒ]
 
-    db = vcat(hcat(w₀, w₁, w₂), hcat(fill(0, (num_x, num_xₒ)), w₀, w₁))
+    db = vcat(hcat(fill(0, (num_x, num_xₒ)), w₀, w₁), hcat(w₀, w₁, fill(0, (num_x, num_xₒ))))
 
-    vx = vcat(x[:, 2], x[:, 1])
+    vx = vec(x)
     vx = insertdims(vx, dims=1)
 
     rv = vx * db
     reshape(rv, (num_xₒ, num_yₒ))
 end
 
-x = permutedims([1 2 3; 4 5 6], (2, 1))  # [y, x]
-w = permutedims([10 20; 30 40], (2, 1))  # [η, ξ]
+x = [1 4; 2 5; 3 6]
+w = [10 30; 20 40]
 
 output = conv2d_new(x, w)
 output |> println
