@@ -12,22 +12,19 @@ function tshow(x)
     println()
 end
 
-# TODO: Exactly the same as `conv2d` in main.jl. Unify with it.
-function conv2d(wc, bc, latent)
-    # Kernel size 3x3, padding 1
+function conv2d(wc, bc, x)
+    println("----")
+    @time x = permutedims(x, (4, 3, 2, 1))
+    @time wc = permutedims(wc, (4, 3, 2, 1))
+    
+    num_x, num_y, num_i, num_n = size(x)
+    num_ξ, num_η, num_i_, num_o = size(wc)
+    @assert num_i == num_i_
+    @assert num_η == num_ξ
+    @assert num_η % 2 == 1
 
-    N, Cin, H, W = size(latent)
-
-    Cout, Cin_, HH, WW = size(wc)
-    if !(Cin == Cin_ && HH == WW && HH % 2 == 1)
-        print("$(size(latent))")
-        print("$(size(wc))")
-        print("$Cin $Cin_ $HH $WW")
-        @assert false
-    end
-
-    kw = HH ÷ 2
-    # kernelwidth = 0
+    kw = num_η ÷ 2
+    # kernelwidth = 0 (padding will be 0 as well)
     #
     # .....
     # .....
@@ -35,7 +32,7 @@ function conv2d(wc, bc, latent)
     # .....
     # .....
     #
-    # kernelwidth = 1
+    # kernelwidth = 1 (padding will be 1 as well)
     #
     # .....
     # .OOO.
@@ -43,52 +40,25 @@ function conv2d(wc, bc, latent)
     # .OOO.
     # .....
 
-    # latent [n, i, y, x]
-    _X_s = [[latent[n, i, y, x] for i=1:Cin, n=1:N] for y=1:H, x=1:W]  # [y, x][i, n]
-    # Matrix of matrices(↓)
-    #
-    # X[i=1 n=1] X[i=1 n=2] ...
-    # X[i=2 n=1] X[i=2 n=2]
-    # ...                   ...
-    #
-    # for each (y, x)
-    
-    # model.enc_wc1
-    #               Cout Cin η ξ
+    @time x = eachslice(x, dims=(1, 2, 4))  # [x, y, n][i]
+    @time x = insertdims.(x, dims=1)  # [x, y, n][1, i]
+    @time wc = eachslice(wc, dims=(1, 2))  # [ξ, η][i, o]
+    @time a = [x[y, x_, n] * wc[ξ, η] for x_=1:num_x, y=1:num_y, ξ=1:num_ξ, η=1:num_η, n=1:num_n]  # [n, x, y, ξ, η][o]
 
-    # wc [o, i, η, ξ]
-    _W_s = [wc[:, :, η, ξ] for η=1:HH, ξ=1:WW]
-    # Matrix of matrices(↓)
-    #
-    # W[o=1 i=1] W[o=1 i=2] ...
-    # W[o=2 i=1] W[o=2 i=2]
-    # ...                   ...
-    #
-    # for each (η, ξ)
-
-    _A_ = [_W_s[η, ξ] * _X_s[y, x] for η = 1:HH, ξ = 1:WW, y = 1:H, x = 1:W]  # [η, ξ, y, x][o, n]
-    # 4D tensor of matrices(↓)
-    #
-    # A[o=1 n=1] A[o=1 n=2] ...
-    # A[o=2 n=1] A[o=2 n=2]
-    # ...                   ...
-    #
-    # for each (η, ξ, y, x)
-
-    # _A_ [η, ξ, y, x][o, n]
-    # sum_A_ [y, x, n][o]
-    # bc [o]
-
-    # [n, o, y, x]
-
-    (
+    @time x = [
         sum(
-            1 ≤ y + Δy ≤ H && 1 ≤ x + Δx ≤ W
-            ? _A_[Δy + kw + 1, Δx + kw + 1, y + Δy, x + Δx][o, n] : 0.0f0
-            for Δy = -kw:kw, Δx = -kw:kw
-        ) + bc[o]
-        for n = 1:N, o = 1:Cout, y = 1:H, x = 1:W
-    )  # [n, o, y, x]
+            1 ≤ y + Δy ≤ num_y && 1 ≤ x_ + Δx ≤ num_x
+            ? a[x_ + Δx, y + Δy, Δx + kw + 1, Δy + kw + 1, n][o]
+            : 0.0f0
+            for Δx = -kw:kw, Δy = -kw:kw
+        ) + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n
+    ] # [x, y, o, n]
+
+    @time x = permutedims(x, (4, 3, 2, 1))  # [n, o, y, x]
+
+    println("----")
+
+    x
 end
 
 # TODO: Exactly the same as `groupnorm` in main.jl. Unify with it.
@@ -250,14 +220,17 @@ x = decref["l"]
 x ./= 0.18215
 
 @assert size(x) == (1, 4, 64, 64)
-x = conv2d(model.dconvs["first_stage_model.post_quant_conv"]..., x) |> collect
+@time x = conv2d(model.dconvs["first_stage_model.post_quant_conv"]..., x) |> collect
+x |> tshow
+exit()
+
 @assert size(x) == (1, 4, 64, 64)
-x = conv2d(model.dconvs["first_stage_model.decoder.conv_in"]..., x) |> collect
+@time x = conv2d(model.dconvs["first_stage_model.decoder.conv_in"]..., x) |> collect
 @assert size(x) == (1, 512, 64, 64)
 
-x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_1"])
+@time x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_1"])
 @assert size(x) == (1, 512, 64, 64)
-x = calc_dablock(x, model.dablocks["first_stage_model.decoder.mid.attn_1"])
+@time x = calc_dablock(x, model.dablocks["first_stage_model.decoder.mid.attn_1"])
 @assert size(x) == (1, 512, 64, 64)
 x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_2"])
 @assert size(x) == (1, 512, 64, 64)
