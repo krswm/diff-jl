@@ -22,5 +22,36 @@ function conv2d_new_new(I, F, B)
     result = reshape(FF * II .+ B, (a, a))
 end
 
-conv2d_new_new([1 4 7; 2 5 8; 3 6 9], [10 40 70; 20 50 80; 30 60 90], 1) |> println
-conv2d_new_new([1 4 7; 2 5 8; 3 6 9], [0 0 0; 0 1 0; 0 0 0], 0) |> println
+function tshow(x)
+    println(size(x))
+    show(IOContext(stdout, :limit => true), "text/plain", x)
+    println()
+end
+
+using DelimitedFiles
+
+function generate_pgm(x, filename)
+    # NetPGM! One of the simplest image formats.
+    num_x, num_y = size(x)
+    open(filename, "w") do file
+        println(file, "P2", " ", num_x, " ", num_y, " ", 16)
+        writedlm(file, transpose(x))
+    end
+end
+
+I = [
+    0 1 1 0 4 4 4 4
+    0 1 1 0 0 0 4 4
+    2 2 3 3 0 0 4 4
+    2 2 3 3 0 0 4 4
+    0 0 0 0 0 0 4 4
+    4 4 0 0 0 0 4 4
+    4 4 0 0 0 0 4 4
+    0 4 4 4 4 4 4 0
+] |> transpose
+# Transposing because I'll use [x, y], not [y, x] although visually it's diagonally flipped in the matrix form.
+
+generate_pgm(I, ARGS[1])
+
+O = conv2d_new_new(I, [0 1 0; 1 8 1; 0 1 0], 0)
+generate_pgm(O, ARGS[2])
