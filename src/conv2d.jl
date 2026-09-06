@@ -2,6 +2,7 @@
 # https://github.com/alisaaalehi/convolution_as_multiplication
 # Thank you for the author of the explanation PDF.
 
+using LinearAlgebra
 using SparseArrays
 
 function tshow(x)
@@ -20,15 +21,26 @@ function conv2d_new_new(I, F, B)
     FF₂_sp = spdiagm(-1 => fill(F[1, 2], a - 1), 0 => fill(F[2, 2], a), 1 => fill(F[3, 2], a - 1))
     FF₃_sp = spdiagm(-1 => fill(F[1, 3], a - 1), 0 => fill(F[2, 3], a), 1 => fill(F[3, 3], a - 1))
 
-    FFs_sp = [FF₁_sp, FF₂_sp, FF₃_sp]
-    z_sp = spzeros(Int, a, a)
 
     # FF_sp = spdiagm(-1 => fill(FF₁_sp, a - 1), 0 => fill(FF₂_sp, a), 1 => fill(FF₃_sp, a - 1))
+    #=
+    FFs_sp = [FF₁_sp, FF₂_sp, FF₃_sp]
+    z_sp = spzeros(Int, a, a)
     FF_sp  = sparse_hcat(
         [sparse_vcat(
             [1 ≤ col - row + 2 ≤ 3 ? FFs_sp[col - row + 2] : z_sp for row=1:a]
         ...) for col=1:a]
     ...)
+    =#
+    pairs = Dict(
+        b => (
+            b == -1 ? FF₁_sp :
+            b ==  0 ? FF₂_sp :
+            b ==  1 ? FF₃_sp :
+            spzeros(Int, a, a)
+        ) for b=(-a + 1):(a - 1)
+    )
+    FF_sp = diagm(pairs...)
     FF_sp |> tshow
 
     II = vec(I)
