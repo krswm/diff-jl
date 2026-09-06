@@ -83,7 +83,6 @@ function conv2d_new_new(I, F)
 end
 
 function conv2d(wc, bc, x)
-    println("----")
     @time x = permutedims(x, (4, 3, 2, 1))
     @time wc = permutedims(wc, (4, 3, 2, 1))
     
@@ -94,32 +93,16 @@ function conv2d(wc, bc, x)
     @assert num_η % 2 == 1
 
     if num_ξ == 3
-        wc = permutedims(wc, (2, 1, 3, 4))
+        println("3333")
+        @time wc = permutedims(wc, (2, 1, 3, 4))
         
-        #=
-        J = [
-            conv2d_new_new(x[:, :, i, n], wc[:, :, i, o])
-            for i=1:num_i, o=1:num_o, n=1:num_n
-        ]  # [i, o, n][x, y]
+        @time O = [conv2d_new_new(x[:, :, :, n], wc[:, :, :, o]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
+        @time O = [O[o, n][x_, y] + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n]  # [x, y, o, n]
 
-        J |> summary |> println
-        J[1, 1, 1] |> summary |> println
-        bc |> summary |> println
-        num_x |> println
-        num_y |> println
-        num_o |> println
-        num_n |> println
-
-        O = [
-            sum(J[i, o, n][x_, y] for i=1:num_i) + bc[o]
-            for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n
-        ] # [x, y, o, n]
-        =#
-        O = [conv2d_new_new(x[:, :, :, n], wc[:, :, :, o]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
-        O = [O[o, n][x_, y] + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n]  # [x, y, o, n]
-
-        O
+        println("/3333")
+        permutedims(O, (4, 3, 2, 1))  # [n, o, y, x]
     else
+        println("1111")
         kw = num_η ÷ 2
         # kernelwidth = 0 (padding will be 0 as well)
         #
@@ -153,8 +136,7 @@ function conv2d(wc, bc, x)
 
         @time x = permutedims(x, (4, 3, 2, 1))  # [n, o, y, x]
 
-        println("----")
-
+        println("/1111")
         x
     end
 end
@@ -316,16 +298,10 @@ model = get_model(tensors, config)
 x = decref["l"]
 @assert size(x) == (1, 4, 64, 64)
 x ./= 0.18215
-
 @assert size(x) == (1, 4, 64, 64)
 @time x = conv2d(model.dconvs["first_stage_model.post_quant_conv"]..., x) |> collect
-x |> tshow
-
 @assert size(x) == (1, 4, 64, 64)
 @time x = conv2d(model.dconvs["first_stage_model.decoder.conv_in"]..., x) |> collect
-x |> tshow
-exit()
-
 @assert size(x) == (1, 512, 64, 64)
 
 @time x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_1"])
