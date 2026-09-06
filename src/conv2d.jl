@@ -16,32 +16,44 @@ function conv2d_new_new(I, F, B)
     @assert num_x == num_y
     a = num_x
     @assert size(F) == (3, 3)  # [ξ, η]
+
+    @time begin
     
-    FF₁_sp = spdiagm(-1 => fill(F[1, 1], a - 1), 0 => fill(F[2, 1], a), 1 => fill(F[3, 1], a - 1))
-    FF₂_sp = spdiagm(-1 => fill(F[1, 2], a - 1), 0 => fill(F[2, 2], a), 1 => fill(F[3, 2], a - 1))
-    FF₃_sp = spdiagm(-1 => fill(F[1, 3], a - 1), 0 => fill(F[2, 3], a), 1 => fill(F[3, 3], a - 1))
+        FF₁_sp = spdiagm(-1 => fill(F[1, 1], a - 1), 0 => fill(F[2, 1], a), 1 => fill(F[3, 1], a - 1))
+        FF₂_sp = spdiagm(-1 => fill(F[1, 2], a - 1), 0 => fill(F[2, 2], a), 1 => fill(F[3, 2], a - 1))
+        FF₃_sp = spdiagm(-1 => fill(F[1, 3], a - 1), 0 => fill(F[2, 3], a), 1 => fill(F[3, 3], a - 1))
 
 
-    # FF_sp = spdiagm(-1 => fill(FF₁_sp, a - 1), 0 => fill(FF₂_sp, a), 1 => fill(FF₃_sp, a - 1))
-    #=
-    FFs_sp = [FF₁_sp, FF₂_sp, FF₃_sp]
-    z_sp = spzeros(Int, a, a)
-    FF_sp  = sparse_hcat(
-        [sparse_vcat(
-            [1 ≤ col - row + 2 ≤ 3 ? FFs_sp[col - row + 2] : z_sp for row=1:a]
-        ...) for col=1:a]
-    ...)
-    =#
-    pairs = Dict(
-        b => (
-            b == -1 ? FF₁_sp :
-            b ==  0 ? FF₂_sp :
-            b ==  1 ? FF₃_sp :
-            spzeros(Int, a, a)
-        ) for b=(-a + 1):(a - 1)
-    )
-    FF_sp = diagm(pairs...)
-    FF_sp |> tshow
+        # FF_sp = spdiagm(-1 => fill(FF₁_sp, a - 1), 0 => fill(FF₂_sp, a), 1 => fill(FF₃_sp, a - 1))
+        FFs_sp = [FF₁_sp, FF₂_sp, FF₃_sp]
+        z_sp = spzeros(Int, a, a)
+        FF_sp  = sparse_hcat(
+            [sparse_vcat(
+                [1 ≤ col - row + 2 ≤ 3 ? FFs_sp[col - row + 2] : z_sp for row=1:a]
+            ...) for col=1:a]
+        ...)
+        #=
+        pairs = Dict(
+            b => (
+                b == -1 ? FF₁_sp :
+                b ==  0 ? FF₂_sp :
+                b ==  1 ? FF₃_sp :
+                spzeros(Int, a, a)
+            ) for b=(-a + 1):(a - 1)
+        )
+        FF_sp = diagm(pairs...)
+        =#
+        FF_sp |> tshow
+    end
+
+    @time begin
+        FF_sp = sparse(
+            vcat((a + 1):(a * a),            2:a,       (a + 2):(2 * a),     (2 * a + 2):(3 * a),     1:(a * a),            1:(a * (a - 1))           ),
+            vcat(1:(a * (a - 1)),            1:(a - 1), (a + 1):(2 * a - 1), (2 * a + 1):(3 * a - 1), 1:(a * a),            (a + 1):(a * a)           ),
+            vcat(fill(F[2, 1], a * (a - 1)), fill(F[1, 2], a * (a - 1)),                              fill(F[2, 2], a * a), fill(F[2, 3], a * (a - 1))),
+        )
+        FF_sp |> tshow
+    end
 
     II = vec(I)
 
