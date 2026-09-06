@@ -2,24 +2,38 @@
 # https://github.com/alisaaalehi/convolution_as_multiplication
 # Thank you for the author of the explanation PDF.
 
+using SparseArrays
+
+function tshow(x)
+    println(size(x))
+    show(IOContext(stdout, :limit => true), "text/plain", x)
+    println()
+end
+
 function conv2d_new_new(I, F, B)
     num_x, num_y = size(I)  # [x, y]
     @assert num_x == num_y
     a = num_x
     @assert size(F) == (3, 3)  # [ξ, η]
     
-    FF₁ = @views [1 ≤ col - row + 2 ≤ 3 ? F[col - row + 2, 1] : 0 for row=1:a, col=1:a]
-    FF₂ = @views [1 ≤ col - row + 2 ≤ 3 ? F[col - row + 2, 2] : 0 for row=1:a, col=1:a]
-    FF₃ = @views [1 ≤ col - row + 2 ≤ 3 ? F[col - row + 2, 3] : 0 for row=1:a, col=1:a]
+    FF₁_sp = spdiagm(-1 => fill(F[1, 1], a - 1), 0 => fill(F[2, 1], a), 1 => fill(F[3, 1], a - 1))
+    FF₂_sp = spdiagm(-1 => fill(F[1, 2], a - 1), 0 => fill(F[2, 2], a), 1 => fill(F[3, 2], a - 1))
+    FF₃_sp = spdiagm(-1 => fill(F[1, 3], a - 1), 0 => fill(F[2, 3], a), 1 => fill(F[3, 3], a - 1))
 
-    FFs = [FF₁, FF₂, FF₃]
-    z = fill(0, (a, a))
+    FFs_sp = [FF₁_sp, FF₂_sp, FF₃_sp]
+    z_sp = spzeros(Int, a, a)
 
-    FF = @views hcat([vcat([1 ≤ col - row + 2 ≤ 3 ? FFs[col - row + 2] : z for row=1:a]...) for col=1:a]...)
+    # FF_sp = spdiagm(-1 => fill(FF₁_sp, a - 1), 0 => fill(FF₂_sp, a), 1 => fill(FF₃_sp, a - 1))
+    FF_sp  = sparse_hcat(
+        [sparse_vcat(
+            [1 ≤ col - row + 2 ≤ 3 ? FFs_sp[col - row + 2] : z_sp for row=1:a]
+        ...) for col=1:a]
+    ...)
+    FF_sp |> tshow
 
     II = vec(I)
 
-    result = reshape(FF * II .+ B, (a, a))
+    result = reshape(FF_sp * II .+ B, (a, a))
 end
 
 #=
