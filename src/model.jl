@@ -16,7 +16,7 @@
 
 module Model
 
-export Layer, Model, get_model
+export Layer, Model, get_decoder_model, get_model
 
 using JSON
 
@@ -432,6 +432,29 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
         dconvs,
         drblocks,
         dablocks,
+    )
+end
+
+struct DecoderConv
+    wc::Array{Float32, 4}  # [x, y, i, o]
+    bc::Vector{Float32}  # [o]
+end
+
+function get_decoder_conv(tensors, prefix)
+    wc = tensors["$prefix.weight"]  # [o, i, y, x]
+    wc = permutedims(wc, (4, 3, 2, 1))  # [x, y, i, o]
+    bc = tensors["$prefix.bias"]  # [o]
+    DecoderConv(wc, bc)
+end
+
+struct DecoderModel
+    conv_pq::DecoderConv
+end
+
+function get_decoder_model(tensors)
+    conv_pq = get_decoder_conv(tensors, "first_stage_model.post_quant_conv")
+    DecoderModel(
+        conv_pq,
     )
 end
 
