@@ -46,14 +46,28 @@ function conv2d_new_new(I, F, B)
         FF_sp |> tshow
     end
 
-    @time begin
+        #=
         FF_sp = sparse(
             vcat((a + 1):(a * a),            2:a,       (a + 2):(2 * a),     (2 * a + 2):(3 * a),     1:(a * a),            1:(a * (a - 1))           ),
             vcat(1:(a * (a - 1)),            1:(a - 1), (a + 1):(2 * a - 1), (2 * a + 1):(3 * a - 1), 1:(a * a),            (a + 1):(a * a)           ),
             vcat(fill(F[2, 1], a * (a - 1)), fill(F[1, 2], a * (a - 1)),                              fill(F[2, 2], a * a), fill(F[2, 3], a * (a - 1))),
         )
+        =#
+
+        cols = Vector{Int}()
+        rows = Vector{Int}()
+        vals = Vector{eltype(F)}()
+        
+        cols = push!(cols, [(1:a) .+ (bigcol - 1) * a for bigcol=1:a]...)
+        rows = push!(rows, [(1:a) .+ (bigrow - 1) * a for bigrow=1:a]...)
+        vals = push!(vals, fill(F[2, 2], a * a)...)
+
+        cols |> println
+        rows |> println
+        vals |> println
+        
+        FF_sp = sparse(cols, rows, vals)
         FF_sp |> tshow
-    end
 
     II = vec(I)
 
