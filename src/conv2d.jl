@@ -46,39 +46,56 @@ function conv2d_new_new(I, F, B)
         FF_sp |> tshow
     end
 
-        #=
+    II = vec(I)
+
+    @time begin
         FF_sp = sparse(
-            vcat((a + 1):(a * a),            2:a,       (a + 2):(2 * a),     (2 * a + 2):(3 * a),     1:(a * a),            1:(a * (a - 1))           ),
-            vcat(1:(a * (a - 1)),            1:(a - 1), (a + 1):(2 * a - 1), (2 * a + 1):(3 * a - 1), 1:(a * a),            (a + 1):(a * a)           ),
-            vcat(fill(F[2, 1], a * (a - 1)), fill(F[1, 2], a * (a - 1)),                              fill(F[2, 2], a * a), fill(F[2, 3], a * (a - 1))),
-        )
-        =#
+            vcat(
+                ((2:a  ) .+ (c-1)*a for c=2:a  )...,
+                ((2:a  ) .+ (c-1)*a for c=1:a  )...,
+                ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
 
-        cols = Vector{Int}()
-        rows = Vector{Int}()
-        vals = Vector{eltype(F)}()
-        
-        cols = push!(cols, [(1:a) .+ (bigcol - 1) * a for bigcol=1:a]...)
-        rows = push!(rows, [(1:a) .+ (bigrow - 1) * a for bigrow=1:a]...)
-        vals = push!(vals, fill(F[2, 2], a * a)...)
+                ((1:a  ) .+ (c-1)*a for c=2:a  )...,
+                ((1:a  ) .+ (c-1)*a for c=1:a  )...,
+                ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
 
-        cols |> println
-        rows |> println
-        vals |> println
-        
-        FF_sp = sparse(cols, rows, vals)
+                ((1:a-1) .+ (c-1)*a for c=2:a  )...,
+                ((1:a-1) .+ (c-1)*a for c=1:a  )...,
+                ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
+            ),
+            vcat(
+                ((1:a-1) .+ (r-1)*a for r=1:a-1)...,
+                ((1:a-1) .+ (r-1)*a for r=1:a  )...,
+                ((1:a-1) .+ (r-1)*a for r=2:a  )...,
+
+                ((1:a  ) .+ (r-1)*a for r=1:a-1)...,
+                ((1:a  ) .+ (r-1)*a for r=1:a  )...,
+                ((1:a  ) .+ (r-1)*a for r=2:a  )...,
+
+                ((2:a  ) .+ (r-1)*a for r=1:a-1)...,
+                ((2:a  ) .+ (r-1)*a for r=1:a  )...,
+                ((2:a  ) .+ (r-1)*a for r=2:a  )...,
+            ),
+            vcat(
+                fill(F[1, 1], (a-1)*(a-1)),  # "10"
+                fill(F[1, 2], a*(a-1)    ),  # "40"
+                fill(F[1, 3], (a-1)*(a-1)),  # "70"
+
+                fill(F[2, 1], a*(a-1)    ),  # "20"
+                fill(F[2, 2], a*a        ),  # "50"
+                fill(F[2, 3], a*(a-1)    ),  # "80"
+
+                fill(F[3, 1], (a-1)*(a-1)),  # "30"
+                fill(F[3, 2], a*(a-1)    ),  # "60"
+                fill(F[3, 3], (a-1)*(a-1)),  # "90"
+            ),
+        ) |> dropzeros!
         FF_sp |> tshow
+    end
 
     II = vec(I)
 
-    result = reshape(FF_sp * II .+ B, (a, a))
-end
-
-#=
-function tshow(x)
-    println(size(x))
-    show(IOContext(stdout, :limit => true), "text/plain", x)
-    println()
+    reshape(FF_sp * II .+ B, (a, a))
 end
 
 using DelimitedFiles
@@ -92,6 +109,7 @@ function generate_pgm(x, filename)
     end
 end
 
+#=
 I = [
     0 1 1 0 4 4 4 4
     0 1 1 0 0 0 4 4
@@ -102,14 +120,16 @@ I = [
     4 4 0 0 0 0 4 4
     0 4 4 4 4 4 4 0
 ] |> transpose
+=#
+I = rand(Int, 512, 512)
 # Transposing because I'll use [x, y], not [y, x] although visually it's diagonally flipped in the matrix form.
 
 generate_pgm(I, ARGS[1])
 
-O = conv2d_new_new(I, [0 1 0; 1 8 1; 0 1 0], 0)
+O = conv2d_new_new(I, [1 1 2; 2 2 1; 1 2 1], 0)
 generate_pgm(O, ARGS[2])
-=#
 
+#=
 I = [
     1 4 7
     2 5 8
@@ -122,4 +142,5 @@ F = [
     30 60 90
 ]
 
-conv2d_new_new(I, F, 0) |> println
+conv2d_new_new(I, F, 0)
+=#
