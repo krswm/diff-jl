@@ -57,6 +57,8 @@ function conv2d(wc, bc, x)
     @assert num_η % 2 == 1
 
     if num_ξ == 3
+        wc = permutedims(wc, (2, 1, 3, 4))
+        
         J = [
             conv2d_new_new(x[:, :, i, n], wc[:, :, i, o])
             for i=1:num_i, o=1:num_o, n=1:num_n
@@ -277,7 +279,6 @@ x ./= 0.18215
 @assert size(x) == (1, 4, 64, 64)
 @time x = conv2d(model.dconvs["first_stage_model.post_quant_conv"]..., x) |> collect
 x |> tshow
-exit()
 
 @assert size(x) == (1, 4, 64, 64)
 @time x = conv2d(model.dconvs["first_stage_model.decoder.conv_in"]..., x) |> collect
