@@ -13,7 +13,8 @@ function tshow(x)
     println()
 end
 
-function conv2d_new_new(I, F)
+function conv2d_3x3(I, F)
+    # Kernel: 3x3
     num_x, num_y, num_i = size(I)  # [x, y, i]
     @assert num_x == num_y
     a = num_x
@@ -78,7 +79,47 @@ function conv2d_new_new(I, F)
 
     II = vec(I)
 
-    result = reshape(FF_sp * II, (a, a))
+    result = reshape(FF_sp * II, (a, a))  # [x, y]
+    result
+end
+
+function conv2d_1x1(I, F)
+    # kernel: 1x1
+    num_x, num_y, num_i = size(I)  # [x, y, i]
+    @assert num_x == num_y
+    a = num_x
+    num_ξ, num_η, num_i_ = size(F)  # [ξ, η, i]
+    @assert num_ξ == num_η == 1
+    
+    FF_sp = sparse(
+        vcat(  # rows
+            (
+                vcat(
+                    ((1:a  ) .+ (c-1)*a for c=1:a  )...,
+                ) for i=1:num_i
+            )...
+        ),
+        vcat(  # columns
+            (
+                vcat(
+                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                ) for i=1:num_i
+            )...
+        ),
+        vcat(
+            (
+                vcat(
+                    fill(F[1, 1, i], a*a        ),  #  "50"
+                ) for i=1:num_i
+            )...
+        ),
+        a*a,
+        a*a*num_i,
+    ) |> dropzeros!
+
+    II = vec(I)
+
+    result = reshape(FF_sp * II, (a, a))  # [x, y]
     result
 end
 
@@ -88,6 +129,7 @@ function conv2d(wc, bc, x)
     @time wc = permutedims(wc, (4, 3, 2, 1))
     
     num_x, num_y, num_i, num_n = size(x)
+    num_xy = num_x * num_y
     num_ξ, num_η, num_i_, num_o = size(wc)
     @assert num_i == num_i_
     @assert num_η == num_ξ
@@ -96,66 +138,17 @@ function conv2d(wc, bc, x)
     if num_ξ == 3
         wc = permutedims(wc, (2, 1, 3, 4))
         
-        #=
-        J = [
-            conv2d_new_new(x[:, :, i, n], wc[:, :, i, o])
-            for i=1:num_i, o=1:num_o, n=1:num_n
-        ]  # [i, o, n][x, y]
-
-        J |> summary |> println
-        J[1, 1, 1] |> summary |> println
-        bc |> summary |> println
-        num_x |> println
-        num_y |> println
-        num_o |> println
-        num_n |> println
-
-        O = [
-            sum(J[i, o, n][x_, y] for i=1:num_i) + bc[o]
-            for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n
-        ] # [x, y, o, n]
-        =#
-        O = [conv2d_new_new(x[:, :, :, n], wc[:, :, :, o]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
+        O = [conv2d_3x3(x[:, :, :, n], wc[:, :, :, o]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
         O = [O[o, n][x_, y] + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n]  # [x, y, o, n]
 
         O
-    else
-        kw = num_η ÷ 2
-        # kernelwidth = 0 (padding will be 0 as well)
-        #
-        # .....
-        # .....
-        # ..O..
-        # .....
-        # .....
-        #
-        # kernelwidth = 1 (padding will be 1 as well)
-        #
-        # .....
-        # .OOO.
-        # .OOO.
-        # .OOO.
-        # .....
+    elseif num_ξ == 1
+        wc = permutedims(wc, (2, 1, 3, 4))
+        
+        O = [conv2d_1x1(x[:, :, :, n], wc[:, :, :, o]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
+        O = [O[o, n][x_, y] + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n]  # [x, y, o, n]
 
-        @time x = eachslice(x, dims=(1, 2, 4))  # [x, y, n][i]
-        @time x = insertdims.(x, dims=1)  # [x, y, n][1, i]
-        @time wc = eachslice(wc, dims=(1, 2))  # [ξ, η][i, o]
-        @time a = [x[y, x_, n] * wc[ξ, η] for x_=1:num_x, y=1:num_y, ξ=1:num_ξ, η=1:num_η, n=1:num_n]  # [n, x, y, ξ, η][o]
-
-        @time x = [
-            sum(
-                1 ≤ y + Δy ≤ num_y && 1 ≤ x_ + Δx ≤ num_x
-                ? a[x_ + Δx, y + Δy, Δx + kw + 1, Δy + kw + 1, n][o]
-                : 0.0f0
-                for Δx = -kw:kw, Δy = -kw:kw
-            ) + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n
-        ] # [x, y, o, n]
-
-        @time x = permutedims(x, (4, 3, 2, 1))  # [n, o, y, x]
-
-        println("----")
-
-        x
+        O
     end
 end
 
@@ -320,6 +313,7 @@ x ./= 0.18215
 @assert size(x) == (1, 4, 64, 64)
 @time x = conv2d(model.dconvs["first_stage_model.post_quant_conv"]..., x) |> collect
 x |> tshow
+exit()
 
 @assert size(x) == (1, 4, 64, 64)
 @time x = conv2d(model.dconvs["first_stage_model.decoder.conv_in"]..., x) |> collect
