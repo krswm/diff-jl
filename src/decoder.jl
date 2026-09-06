@@ -12,6 +12,26 @@ function tshow(x)
     println()
 end
 
+function conv2d_new_new(I, F)
+    num_x, num_y = size(I)  # [x, y]
+    @assert num_x == num_y
+    a = num_x
+    @assert size(F) == (3, 3)  # [ξ, η]
+    
+    FF₁ = @views [1 ≤ col - row + 2 ≤ 3 ? F[col - row + 2, 1] : 0 for row=1:a, col=1:a]
+    FF₂ = @views [1 ≤ col - row + 2 ≤ 3 ? F[col - row + 2, 2] : 0 for row=1:a, col=1:a]
+    FF₃ = @views [1 ≤ col - row + 2 ≤ 3 ? F[col - row + 2, 3] : 0 for row=1:a, col=1:a]
+
+    FFs = [FF₁, FF₂, FF₃]
+    z = fill(0, (a, a))
+
+    FF = @views hcat([vcat([1 ≤ col - row + 2 ≤ 3 ? FFs[col - row + 2] : z for row=1:a]...) for col=1:a]...)
+
+    II = vec(I)
+
+    result = reshape(FF * II, (a, a))
+end
+
 function conv2d(wc, bc, x)
     println("----")
     @time x = permutedims(x, (4, 3, 2, 1))
@@ -23,42 +43,56 @@ function conv2d(wc, bc, x)
     @assert num_η == num_ξ
     @assert num_η % 2 == 1
 
-    kw = num_η ÷ 2
-    # kernelwidth = 0 (padding will be 0 as well)
-    #
-    # .....
-    # .....
-    # ..O..
-    # .....
-    # .....
-    #
-    # kernelwidth = 1 (padding will be 1 as well)
-    #
-    # .....
-    # .OOO.
-    # .OOO.
-    # .OOO.
-    # .....
+    if num_ξ == 3
+        J = [
+            conv2d_new_new(x[:, :, i, n], wc[:, :, i, o])
+            for x_=1:num_n, y=1:num_n, i=1:num_n, o=1:num_o, n=1:num_n
+        ]  # [x, y, i, o, n]
 
-    @time x = eachslice(x, dims=(1, 2, 4))  # [x, y, n][i]
-    @time x = insertdims.(x, dims=1)  # [x, y, n][1, i]
-    @time wc = eachslice(wc, dims=(1, 2))  # [ξ, η][i, o]
-    @time a = [x[y, x_, n] * wc[ξ, η] for x_=1:num_x, y=1:num_y, ξ=1:num_ξ, η=1:num_η, n=1:num_n]  # [n, x, y, ξ, η][o]
+        O = [
+            sum(J[x_, y, :, o, n]) + bc[o]
+            for x_=1:num_n, y=1:num_n, o=1:num_o, n=1:num_n
+        ] # [x, y, o, n]
 
-    @time x = [
-        sum(
-            1 ≤ y + Δy ≤ num_y && 1 ≤ x_ + Δx ≤ num_x
-            ? a[x_ + Δx, y + Δy, Δx + kw + 1, Δy + kw + 1, n][o]
-            : 0.0f0
-            for Δx = -kw:kw, Δy = -kw:kw
-        ) + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n
-    ] # [x, y, o, n]
+        O
+    else
+        kw = num_η ÷ 2
+        # kernelwidth = 0 (padding will be 0 as well)
+        #
+        # .....
+        # .....
+        # ..O..
+        # .....
+        # .....
+        #
+        # kernelwidth = 1 (padding will be 1 as well)
+        #
+        # .....
+        # .OOO.
+        # .OOO.
+        # .OOO.
+        # .....
 
-    @time x = permutedims(x, (4, 3, 2, 1))  # [n, o, y, x]
+        @time x = eachslice(x, dims=(1, 2, 4))  # [x, y, n][i]
+        @time x = insertdims.(x, dims=1)  # [x, y, n][1, i]
+        @time wc = eachslice(wc, dims=(1, 2))  # [ξ, η][i, o]
+        @time a = [x[y, x_, n] * wc[ξ, η] for x_=1:num_x, y=1:num_y, ξ=1:num_ξ, η=1:num_η, n=1:num_n]  # [n, x, y, ξ, η][o]
 
-    println("----")
+        @time x = [
+            sum(
+                1 ≤ y + Δy ≤ num_y && 1 ≤ x_ + Δx ≤ num_x
+                ? a[x_ + Δx, y + Δy, Δx + kw + 1, Δy + kw + 1, n][o]
+                : 0.0f0
+                for Δx = -kw:kw, Δy = -kw:kw
+            ) + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n
+        ] # [x, y, o, n]
 
-    x
+        @time x = permutedims(x, (4, 3, 2, 1))  # [n, o, y, x]
+
+        println("----")
+
+        x
+    end
 end
 
 # TODO: Exactly the same as `groupnorm` in main.jl. Unify with it.
@@ -221,11 +255,12 @@ x ./= 0.18215
 
 @assert size(x) == (1, 4, 64, 64)
 @time x = conv2d(model.dconvs["first_stage_model.post_quant_conv"]..., x) |> collect
-x |> tshow
-exit()
 
 @assert size(x) == (1, 4, 64, 64)
 @time x = conv2d(model.dconvs["first_stage_model.decoder.conv_in"]..., x) |> collect
+x |> tshow
+exit()
+
 @assert size(x) == (1, 512, 64, 64)
 
 @time x = calc_drblock(x, model.drblocks["first_stage_model.decoder.mid.block_1"])

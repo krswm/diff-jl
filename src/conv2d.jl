@@ -22,6 +22,7 @@ function conv2d_new_new(I, F, B)
     result = reshape(FF * II .+ B, (a, a))
 end
 
+#=
 function tshow(x)
     println(size(x))
     show(IOContext(stdout, :limit => true), "text/plain", x)
@@ -55,3 +56,18 @@ generate_pgm(I, ARGS[1])
 
 O = conv2d_new_new(I, [0 1 0; 1 8 1; 0 1 0], 0)
 generate_pgm(O, ARGS[2])
+=#
+
+I = [
+    1 4 7
+    2 5 8
+    3 6 9
+]
+
+F = [
+    10 40 70
+    20 50 80
+    30 60 90
+]
+
+conv2d_new_new(I, F, 0) |> println
