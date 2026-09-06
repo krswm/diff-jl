@@ -14,58 +14,71 @@ function tshow(x)
 end
 
 function conv2d_new_new(I, F)
-    println("~~~~")
-    num_x, num_y = size(I)  # [x, y]
+    num_x, num_y, num_i = size(I)  # [x, y, i]
     @assert num_x == num_y
     a = num_x
-    @assert size(F) == (3, 3)  # [ξ, η]
+    num_ξ, num_η, num_i_ = size(F)  # [ξ, η, i]
+    @assert num_ξ == num_η == 3
     
-    @time FF_sp = sparse(
-        vcat(
-            ((2:a  ) .+ (c-1)*a for c=2:a  )...,
-            ((2:a  ) .+ (c-1)*a for c=1:a  )...,
-            ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
+    FF_sp = sparse(
+        vcat(  # rows
+            (
+                vcat(
+                    ((2:a  ) .+ (c-1)*a for c=2:a  )...,
+                    ((2:a  ) .+ (c-1)*a for c=1:a  )...,
+                    ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
 
-            ((1:a  ) .+ (c-1)*a for c=2:a  )...,
-            ((1:a  ) .+ (c-1)*a for c=1:a  )...,
-            ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
+                    ((1:a  ) .+ (c-1)*a for c=2:a  )...,
+                    ((1:a  ) .+ (c-1)*a for c=1:a  )...,
+                    ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
 
-            ((1:a-1) .+ (c-1)*a for c=2:a  )...,
-            ((1:a-1) .+ (c-1)*a for c=1:a  )...,
-            ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
+                    ((1:a-1) .+ (c-1)*a for c=2:a  )...,
+                    ((1:a-1) .+ (c-1)*a for c=1:a  )...,
+                    ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
+                ) for i=1:num_i
+            )...
+        ),
+        vcat(  # columns
+            (
+                vcat(
+                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+
+                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+
+                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+                ) for i=1:num_i
+            )...
         ),
         vcat(
-            ((1:a-1) .+ (r-1)*a for r=1:a-1)...,
-            ((1:a-1) .+ (r-1)*a for r=1:a  )...,
-            ((1:a-1) .+ (r-1)*a for r=2:a  )...,
+            (
+                vcat(
+                    fill(F[1, 1, i], (a-1)*(a-1)),  #  "10"
+                    fill(F[1, 2, i], a*(a-1)    ),  #  "40"
+                    fill(F[1, 3, i], (a-1)*(a-1)),  #  "70"
 
-            ((1:a  ) .+ (r-1)*a for r=1:a-1)...,
-            ((1:a  ) .+ (r-1)*a for r=1:a  )...,
-            ((1:a  ) .+ (r-1)*a for r=2:a  )...,
+                    fill(F[2, 1, i], a*(a-1)    ),  #  "20"
+                    fill(F[2, 2, i], a*a        ),  #  "50"
+                    fill(F[2, 3, i], a*(a-1)    ),  #  "80"
 
-            ((2:a  ) .+ (r-1)*a for r=1:a-1)...,
-            ((2:a  ) .+ (r-1)*a for r=1:a  )...,
-            ((2:a  ) .+ (r-1)*a for r=2:a  )...,
+                    fill(F[3, 1, i], (a-1)*(a-1)),  #  "30"
+                    fill(F[3, 2, i], a*(a-1)    ),  #  "60"
+                    fill(F[3, 3, i], (a-1)*(a-1)),  #  "90"
+                ) for i=1:num_i
+            )...
         ),
-        vcat(
-            fill(F[1, 1], (a-1)*(a-1)),  # "10"
-            fill(F[1, 2], a*(a-1)    ),  # "40"
-            fill(F[1, 3], (a-1)*(a-1)),  # "70"
-
-            fill(F[2, 1], a*(a-1)    ),  # "20"
-            fill(F[2, 2], a*a        ),  # "50"
-            fill(F[2, 3], a*(a-1)    ),  # "80"
-
-            fill(F[3, 1], (a-1)*(a-1)),  # "30"
-            fill(F[3, 2], a*(a-1)    ),  # "60"
-            fill(F[3, 3], (a-1)*(a-1)),  # "90"
-        ),
+        a*a,
+        a*a*num_i,
     ) |> dropzeros!
 
-    @time II = vec(I)
+    II = vec(I)
 
-    @time result = reshape(FF_sp * II, (a, a))
-    println("~~~~")
+    result = reshape(FF_sp * II, (a, a))
     result
 end
 
@@ -83,6 +96,7 @@ function conv2d(wc, bc, x)
     if num_ξ == 3
         wc = permutedims(wc, (2, 1, 3, 4))
         
+        #=
         J = [
             conv2d_new_new(x[:, :, i, n], wc[:, :, i, o])
             for i=1:num_i, o=1:num_o, n=1:num_n
@@ -100,6 +114,9 @@ function conv2d(wc, bc, x)
             sum(J[i, o, n][x_, y] for i=1:num_i) + bc[o]
             for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n
         ] # [x, y, o, n]
+        =#
+        O = [conv2d_new_new(x[:, :, :, n], wc[:, :, :, o]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
+        O = [O[o, n][x_, y] + bc[o] for x_=1:num_x, y=1:num_y, o=1:num_o, n=1:num_n]  # [x, y, o, n]
 
         O
     else
