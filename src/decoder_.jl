@@ -1,3 +1,4 @@
+using DelimitedFiles
 using SparseArrays
 using Statistics
 
@@ -196,9 +197,30 @@ function decode(x, dmodel)
 end
 
 decref = load_safetensors("../../../Downloads/decref.safetensors")
+#=
 dmodel = begin
     tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
     get_dmodel(tensors)
 end
 x = decref["l"]
 decode(x, dmodel)
+=#
+x = decref["i"]
+x = permutedims(x, (4, 3, 2, 1))  # [x, y, rgb, n]
+
+x = clamp.(floor.((x .+ 1) * 128), UInt8)  # [x, y, rgb, n]
+
+function generate_ppm_image(x, filename)
+    println(size(x))
+    num_x, num_y, num_rgb, num_n = size(x)
+    @assert num_rgb == 3
+    @assert num_n == 1
+    x = permutedims(x, (4, 3, 1, 2))  # [n, rgb, x, y]
+    x = vec(x)  # [rgbyx]
+    open(filename, "w") do file
+        println(file, "P3", " ", num_x, " ", num_y, " ", 256)
+        writedlm(file, x)
+    end
+end
+
+generate_ppm_image(x, ARGS[1])
