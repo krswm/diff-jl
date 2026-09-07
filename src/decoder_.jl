@@ -190,23 +190,19 @@ function decode(x, dmodel)
     x = silu.(x)
     @time x = conv(x, dmodel.dconv_out.wc, stride=1, pad=1, flipped=true) .+ dmodel.dconv_out.bc
 
-    x |> tshow
-
     # Expected result!
     # Thank you Flux.jl for providing me a fast 2D convolution implementation.
+    
+    x
 end
 
 decref = load_safetensors("../../../Downloads/decref.safetensors")
-#=
 dmodel = begin
     tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
     get_dmodel(tensors)
 end
 x = decref["l"]
-decode(x, dmodel)
-=#
-x = decref["i"]
-x = permutedims(x, (4, 3, 2, 1))  # [x, y, rgb, n]
+x = decode(x, dmodel)
 
 x = clamp.(floor.((x .+ 1) * 128), UInt8)  # [x, y, rgb, n]
 
@@ -218,7 +214,7 @@ function generate_ppm_image(x, filename)
     x = permutedims(x, (4, 3, 1, 2))  # [n, rgb, x, y]
     x = vec(x)  # [rgbyx]
     open(filename, "w") do file
-        println(file, "P3", " ", num_x, " ", num_y, " ", 256)
+        println(file, "P3", " ", num_x, " ", num_y, " ", 255)
         writedlm(file, x)
     end
 end
