@@ -477,6 +477,40 @@ function get_drblock(tensors, prefix)
     Drblock(g1, t1, wc1, bc1, g2, t2, wc2, bc2)
 end
 
+# Decoder residual block w/ additional convolution
+struct Drcblock
+    g1::Vector{Float32}
+    t1::Vector{Float32}
+    wc1::Array{Float32, 4}
+    bc1::Array{Float32, 4}
+    g2::Vector{Float32}
+    t2::Vector{Float32}
+    wc2::Array{Float32, 4}
+    bc2::Array{Float32, 4}
+    wc3::Array{Float32, 4}
+    bc3::Array{Float32, 4}
+end
+
+function get_drcblock(tensors, prefix)
+    g1  = tensors["$prefix.norm1.weight"]
+    t1  = tensors["$prefix.norm1.bias"]
+    wc1 = tensors["$prefix.conv1.weight"]  # [o, i, y, x]
+    wc1 = permutedims(wc1, (4, 3, 2, 1))  # [x, y, i, o]
+    bc1 = tensors["$prefix.conv1.bias"]
+    bc1 = insertdims(bc1, dims=(1, 2, 4))  # [x, y, o, n]
+    g2  = tensors["$prefix.norm2.weight"]
+    t2  = tensors["$prefix.norm2.bias"]
+    wc2 = tensors["$prefix.conv2.weight"]  # [o, i, y, x]
+    wc2 = permutedims(wc2, (4, 3, 2, 1))  # [x, y, i, o]
+    bc2 = tensors["$prefix.conv2.bias"]  # [x, y, o, n]
+    bc2 = insertdims(bc2, dims=(1, 2, 4))  # [x, y, o, n]
+    wc3 = tensors["$prefix.nin_shortcut.weight"]  # [o, i, y, x]
+    wc3 = permutedims(wc3, (4, 3, 2, 1))  # [x, y, i, o]
+    bc3 = tensors["$prefix.nin_shortcut.bias"]  # [x, y, o, n]
+    bc3 = insertdims(bc3, dims=(1, 2, 4))  # [x, y, o, n]
+    Drcblock(g1, t1, wc1, bc1, g2, t2, wc2, bc2, wc3, bc3)
+end
+
 struct Dablock
     g::Vector{Float32}
     t::Vector{Float32}
@@ -514,24 +548,109 @@ function get_dablock(tensors, prefix)
         Dablock(g, t, w1, b1, w2, b2)
 end
 
+# Decoder group norm
+struct Dgn
+    g::Vector{Float32}
+    t::Vector{Float32}
+end
+
+function get_dgn(tensors, prefix)
+    g = tensors["$prefix.weight"]
+    t = tensors["$prefix.bias"]
+    Dgn(g, t)
+end
+
 # Decoder model
 struct Dmodel
     dconv_pq::Dconv
     dconv_in::Dconv
+
     drblock_mid1::Drblock
     dablock::Dablock
+    drblock_mid2::Drblock
+
+    drblock_30::Drblock
+    drblock_31::Drblock
+    drblock_32::Drblock
+    dconv_3::Dconv
+
+    drblock_20::Drblock
+    drblock_21::Drblock
+    drblock_22::Drblock
+    dconv_2::Dconv
+
+    drcblock_10::Drcblock
+    drblock_11::Drblock
+    drblock_12::Drblock
+    dconv_1::Dconv
+
+    drcblock_00::Drcblock
+    drblock_01::Drblock
+    drblock_02::Drblock
+
+    dgn::Dgn
+    dconv_out::Dconv
 end
 
 function get_dmodel(tensors)
     dconv_pq = get_dconv(tensors, "first_stage_model.post_quant_conv")
     dconv_in = get_dconv(tensors, "first_stage_model.decoder.conv_in")
+
     drblock_mid1 = get_drblock(tensors, "first_stage_model.decoder.mid.block_1")
     dablock = get_dablock(tensors, "first_stage_model.decoder.mid.attn_1")
+    drblock_mid2 = get_drblock(tensors, "first_stage_model.decoder.mid.block_2")
+
+    drblock_30 = get_drblock(tensors, "first_stage_model.decoder.up.3.block.0")
+    drblock_31 = get_drblock(tensors, "first_stage_model.decoder.up.3.block.1")
+    drblock_32 = get_drblock(tensors, "first_stage_model.decoder.up.3.block.2")
+    dconv_3 = get_dconv(tensors, "first_stage_model.decoder.up.3.upsample.conv")
+
+    drblock_20 = get_drblock(tensors, "first_stage_model.decoder.up.2.block.0")
+    drblock_21 = get_drblock(tensors, "first_stage_model.decoder.up.2.block.1")
+    drblock_22 = get_drblock(tensors, "first_stage_model.decoder.up.2.block.2")
+    dconv_2 = get_dconv(tensors, "first_stage_model.decoder.up.2.upsample.conv")
+
+    drcblock_10 = get_drcblock(tensors, "first_stage_model.decoder.up.1.block.0")
+    drblock_11 = get_drblock(tensors, "first_stage_model.decoder.up.1.block.1")
+    drblock_12 = get_drblock(tensors, "first_stage_model.decoder.up.1.block.2")
+    dconv_1 = get_dconv(tensors, "first_stage_model.decoder.up.1.upsample.conv")
+
+    drcblock_00 = get_drcblock(tensors, "first_stage_model.decoder.up.0.block.0")
+    drblock_01 = get_drblock(tensors, "first_stage_model.decoder.up.0.block.1")
+    drblock_02 = get_drblock(tensors, "first_stage_model.decoder.up.0.block.2")
+
+    dgn = get_dgn(tensors, "first_stage_model.decoder.norm_out")
+    dconv_out = get_dconv(tensors, "first_stage_model.decoder.conv_out")
+
     Dmodel(
         dconv_pq,
         dconv_in,
+
         drblock_mid1,
         dablock,
+        drblock_mid2,
+
+        drblock_30,
+        drblock_31,
+        drblock_32,
+        dconv_3,
+
+        drblock_20,
+        drblock_21,
+        drblock_22,
+        dconv_2,
+
+        drcblock_10,
+        drblock_11,
+        drblock_12,
+        dconv_1,
+
+        drcblock_00,
+        drblock_01,
+        drblock_02,
+
+        dgn,
+        dconv_out,
     )
 end
 

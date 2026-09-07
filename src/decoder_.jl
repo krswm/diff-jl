@@ -56,6 +56,17 @@ function calc_drblock(x, drblock)
     y + x
 end
 
+function calc_drcblock(x, drcblock)
+    y = x  # [x, y, o, n]
+    x = groupnorm(x, drcblock.g1, drcblock.t1)  # [x, y, o, n]
+    x = silu.(x)  # [x, y, o, n]
+    x = conv(x, drcblock.wc1, stride=1, pad=1, flipped=true) .+ drcblock.bc1
+    x = groupnorm(x, drcblock.g2, drcblock.t2)  # [x, y, o, n]
+    x = silu.(x)  # [x, y, o, n]
+    x = conv(x, drcblock.wc2, stride=1, pad=1, flipped=true) .+ drcblock.bc2
+    x + (conv(y, drcblock.wc3, stride=1, pad=0, flipped=true) .+ drcblock.bc3)
+end
+
 function self_attention(x, w1, b1, w2, b2, num_h)
     # x [xy, o]
     # w1 [o, 3o]
@@ -109,6 +120,12 @@ function calc_dablock(x, dablock)
     y
 end
 
+function upsample(x)
+    # x [half_x, half_y, o, n]
+    num_half_x, num_half_y, num_o, num_n = size(x)
+    @views [x[x_ ÷ 2 + 1, y ÷ 2 + 1, o, n] for x_=0:(2 * num_half_x - 1), y=0:(2 * num_half_y - 1), o=1:num_o, n=1:num_n] # [x, y, o, n]
+end
+
 function decode(x, dmodel)
     @assert eltype(x) == Float32
     @assert size(x) == (1, 4, 64, 64)  # [n, o, y, x]
@@ -118,18 +135,64 @@ function decode(x, dmodel)
     x ./= 0.18215f0
     @assert eltype(x) == Float32
     @assert size(x) == (64, 64, 4, 1)
-    x = conv(x, dmodel.dconv_pq.wc, stride=1, pad=0, flipped=true) .+ dmodel.dconv_pq.bc
+
+    @time x = conv(x, dmodel.dconv_pq.wc, stride=1, pad=0, flipped=true) .+ dmodel.dconv_pq.bc
     @assert eltype(x) == Float32
     @assert size(x) == (64, 64, 4, 1)
-    x = conv(x, dmodel.dconv_in.wc, stride=1, pad=1, flipped=true) .+ dmodel.dconv_in.bc
+    @time x = conv(x, dmodel.dconv_in.wc, stride=1, pad=1, flipped=true) .+ dmodel.dconv_in.bc
     @assert eltype(x) == Float32
     @assert size(x) == (64, 64, 512, 1)
-    x = calc_drblock(x, dmodel.drblock_mid1)
+
+    @time x = calc_drblock(x, dmodel.drblock_mid1)
     @assert eltype(x) == Float32
     @assert size(x) == (64, 64, 512, 1)
-    x = calc_dablock(x, dmodel.dablock)
+    @time x = calc_dablock(x, dmodel.dablock)
     @assert eltype(x) == Float32
     @assert size(x) == (64, 64, 512, 1)
+    @time x = calc_drblock(x, dmodel.drblock_mid2)
+    @assert eltype(x) == Float32
+    @assert size(x) == (64, 64, 512, 1)
+
+    @time x = calc_drblock(x, dmodel.drblock_30)
+    @assert eltype(x) == Float32
+    @assert size(x) == (64, 64, 512, 1)
+    @time x = calc_drblock(x, dmodel.drblock_31)
+    @assert eltype(x) == Float32
+    @assert size(x) == (64, 64, 512, 1)
+    @time x = calc_drblock(x, dmodel.drblock_32)
+    @assert eltype(x) == Float32
+    @assert size(x) == (64, 64, 512, 1)
+    @time x = upsample(x)
+    @assert eltype(x) == Float32
+    @assert size(x) == (128, 128, 512, 1)
+    @time x = conv(x, dmodel.dconv_3.wc, stride=1, pad=1, flipped=true) .+ dmodel.dconv_3.bc
+    @assert eltype(x) == Float32
+    @assert size(x) == (128, 128, 512, 1)
+
+    @time x = calc_drblock(x, dmodel.drblock_20)
+    @time x = calc_drblock(x, dmodel.drblock_21)
+    @time x = calc_drblock(x, dmodel.drblock_22)
+    @time x = upsample(x)
+    @time x = conv(x, dmodel.dconv_2.wc, stride=1, pad=1, flipped=true) .+ dmodel.dconv_2.bc
+
+    @time x = calc_drcblock(x, dmodel.drcblock_10)
+    @time x = calc_drblock(x, dmodel.drblock_11)
+    @time x = calc_drblock(x, dmodel.drblock_12)
+    @time x = upsample(x)
+    @time x = conv(x, dmodel.dconv_1.wc, stride=1, pad=1, flipped=true) .+ dmodel.dconv_1.bc
+
+    @time x = calc_drcblock(x, dmodel.drcblock_00)
+    @time x = calc_drblock(x, dmodel.drblock_01)
+    @time x = calc_drblock(x, dmodel.drblock_02)
+
+    x = groupnorm(x, dmodel.dgn.g, dmodel.dgn.t)
+    x = silu.(x)
+    @time x = conv(x, dmodel.dconv_out.wc, stride=1, pad=1, flipped=true) .+ dmodel.dconv_out.bc
+
+    x |> tshow
+
+    # Expected result!
+    # Thank you Flux.jl for providing me a fast 2D convolution implementation.
 end
 
 decref = load_safetensors("../../../Downloads/decref.safetensors")
