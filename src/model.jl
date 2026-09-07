@@ -477,21 +477,61 @@ function get_drblock(tensors, prefix)
     Drblock(g1, t1, wc1, bc1, g2, t2, wc2, bc2)
 end
 
+struct Dablock
+    g::Vector{Float32}
+    t::Vector{Float32}
+    w1::Matrix{Float32}
+    b1::Matrix{Float32}
+    w2::Matrix{Float32}
+    b2::Matrix{Float32}
+end
+
+function get_dablock(tensors, prefix)
+        g = tensors["$prefix.norm.weight"]
+        t = tensors["$prefix.norm.bias"]
+        w1  = cat(
+            tensors["$prefix.q.weight"],
+            tensors["$prefix.k.weight"],
+            tensors["$prefix.v.weight"];
+            dims=1,
+        )
+        @assert size(w1) == (1536, 512, 1, 1)
+        w1 = reshape(w1, (1536, 512))
+        w1 = permutedims(w1, (2, 1))
+        b1  = cat(
+            tensors["$prefix.q.bias"],
+            tensors["$prefix.k.bias"],
+            tensors["$prefix.v.bias"],
+            dims=1,
+        )
+        b1 = insertdims(b1, dims=1)
+        w2 = tensors["$prefix.proj_out.weight"]
+        @assert size(w2) == (512, 512, 1, 1)
+        w2 = reshape(w2, (512, 512))
+        w2 = permutedims(w2, (2, 1))
+        b2 = tensors["$prefix.proj_out.bias"]
+        b2 = insertdims(b2, dims=1)
+        Dablock(g, t, w1, b1, w2, b2)
+end
+
 # Decoder model
 struct Dmodel
     dconv_pq::Dconv
     dconv_in::Dconv
     drblock_mid1::Drblock
+    dablock::Dablock
 end
 
 function get_dmodel(tensors)
     dconv_pq = get_dconv(tensors, "first_stage_model.post_quant_conv")
     dconv_in = get_dconv(tensors, "first_stage_model.decoder.conv_in")
     drblock_mid1 = get_drblock(tensors, "first_stage_model.decoder.mid.block_1")
+    dablock = get_dablock(tensors, "first_stage_model.decoder.mid.attn_1")
     Dmodel(
         dconv_pq,
         dconv_in,
         drblock_mid1,
+        dablock,
     )
 end
 
