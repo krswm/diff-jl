@@ -47,10 +47,6 @@ function conv2d_1x1_inner(x_vec, wc, bc, a, num_i)
 end
 
 function conv2d_1x1(x, wc, bc)
-    # I found a nice explanation for how to calculate convolution efficiently.
-    # https://github.com/alisaaalehi/convolution_as_multiplication
-    # Thank you for the author of the explanation PDF.
-
     @assert ndims(x) == 3    
     num_x, num_y, num_i = size(x)
     @assert num_x == num_y  # My implementation supports only square image currently.
@@ -74,6 +70,94 @@ function conv2d_1x1(x, wc, bc)
     stack(result)
 end
 
+function conv2d_3x3_inner(x_vec, wc, bc, a, num_i)
+    # wc [x, y, i]
+    wc_doubleblock = sparse(
+        vcat(  # rows
+            (
+                vcat(
+                    ((2:a  ) .+ (c-1)*a for c=2:a  )...,
+                    ((2:a  ) .+ (c-1)*a for c=1:a  )...,
+                    ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+                    ((1:a  ) .+ (c-1)*a for c=2:a  )...,
+                    ((1:a  ) .+ (c-1)*a for c=1:a  )...,
+                    ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+                    ((1:a-1) .+ (c-1)*a for c=2:a  )...,
+                    ((1:a-1) .+ (c-1)*a for c=1:a  )...,
+                    ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
+                ) for i=1:num_i
+            )...
+        ),
+        vcat(  # columns
+            (
+                vcat(
+                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+
+                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+
+                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+                ) for i=1:num_i
+            )...
+        ),
+        vcat(
+            (
+                vcat(
+                    fill(wc[1, 1, i], (a-1)*(a-1)),  #  "10"
+                    fill(wc[1, 2, i], a*(a-1)    ),  #  "40"
+                    fill(wc[1, 3, i], (a-1)*(a-1)),  #  "70"
+
+                    fill(wc[2, 1, i], a*(a-1)    ),  #  "20"
+                    fill(wc[2, 2, i], a*a        ),  #  "50"
+                    fill(wc[2, 3, i], a*(a-1)    ),  #  "80"
+
+                    fill(wc[3, 1, i], (a-1)*(a-1)),  #  "30"
+                    fill(wc[3, 2, i], a*(a-1)    ),  #  "60"
+                    fill(wc[3, 3, i], (a-1)*(a-1)),  #  "90"
+                ) for i=1:num_i
+            )...
+        ),
+        a*a,
+        a*a*num_i,
+    ) |> dropzeros!  # [α, αᵢ]
+
+    # x_vec [αᵢ]
+    # bc (scalar)
+    result = wc_doubleblock * x_vec .+ bc  # [α]
+    reshape(result, (a, a))  # [x, y]
+end
+
+function conv2d_3x3(x, wc, bc)
+    @assert ndims(x) == 3    
+    num_x, num_y, num_i = size(x)
+    @assert num_x == num_y  # My implementation supports only square image currently.
+    a = num_x
+
+    @assert ndims(wc) == 4
+    @assert eltype(wc) == eltype(x)
+    num_ξ, num_η, num_i_, num_o = size(wc)
+    @assert num_ξ == num_η == 3
+    @assert num_i_ == num_i
+    wc = eachslice(wc, dims=4)  # [o][ξ, η, i]
+
+    @assert ndims(bc) == 1
+    @assert eltype(bc) == eltype(x)
+    num_o_, = size(bc)
+    @assert num_o_ == num_o
+
+    vec_x = vec(x)  # [αᵢ]
+
+    result = conv2d_3x3_inner.(Ref(vec_x), wc, bc, a, num_i)  # [o][x, y]
+    stack(result)
+end
+
 function decode(x, model)
     @assert size(x) == (1, 4, 64, 64)
     @assert eltype(x) == Float32
@@ -86,6 +170,9 @@ function decode(x, model)
     @assert eltype(x) == Float32
     x = conv2d_1x1(x, model.conv_pq.wc, model.conv_pq.bc)
     @assert size(x) == (64, 64, 4)
+    @assert eltype(x) == Float32
+    x = conv2d_3x3(x, model.conv_in.wc, model.conv_in.bc)
+    @assert size(x) == (64, 64, 512)
     @assert eltype(x) == Float32
     x |> tshow
 end

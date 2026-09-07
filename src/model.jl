@@ -449,12 +449,15 @@ end
 
 struct DecoderModel
     conv_pq::DecoderConv
+    conv_in::DecoderConv
 end
 
 function get_decoder_model(tensors)
     conv_pq = get_decoder_conv(tensors, "first_stage_model.post_quant_conv")
+    conv_in = get_decoder_conv(tensors, "first_stage_model.decoder.conv_in")
     DecoderModel(
         conv_pq,
+        conv_in,
     )
 end
 
