@@ -11,6 +11,26 @@ function tshow(x)
     println()
 end
 
+function get_OOi(Fi, Ii, a, rows, cols)
+    vals = vcat(  # vals
+        fill(Fi[1, 1], (a-1)*(a-1)),  #  "10"
+        fill(Fi[1, 2], a*(a-1)    ),  #  "40"
+        fill(Fi[1, 3], (a-1)*(a-1)),  #  "70"
+
+        fill(Fi[2, 1], a*(a-1)    ),  #  "20"
+        fill(Fi[2, 2], a*a        ),  #  "50"
+        fill(Fi[2, 3], a*(a-1)    ),  #  "80"
+
+        fill(Fi[3, 1], (a-1)*(a-1)),  #  "30"
+        fill(Fi[3, 2], a*(a-1)    ),  #  "60"
+        fill(Fi[3, 3], (a-1)*(a-1)),  #  "90"
+    )
+    FFi_sp = sparse(rows, cols, vals)
+    IIi = vec(Ii)
+    FFi_sp * IIi
+end
+
+
 function conv2d_new_new(I, F)
     num_x, num_y, num_i = size(I)  # [x, y, i]
     @assert num_x == num_y
@@ -18,65 +38,159 @@ function conv2d_new_new(I, F)
     num_ξ, num_η, num_i_ = size(F)  # [ξ, η, i]
     @assert num_ξ == num_η == 3
 
-    @time FF_sp = sparse(
-        vcat(  # rows
-            (
-                vcat(
-                    ((2:a  ) .+ (c-1)*a for c=2:a  )...,
-                    ((2:a  ) .+ (c-1)*a for c=1:a  )...,
-                    ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
-
-                    ((1:a  ) .+ (c-1)*a for c=2:a  )...,
-                    ((1:a  ) .+ (c-1)*a for c=1:a  )...,
-                    ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
-
-                    ((1:a-1) .+ (c-1)*a for c=2:a  )...,
-                    ((1:a-1) .+ (c-1)*a for c=1:a  )...,
-                    ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
-                ) for i=1:num_i
-            )...
-        ),
-        vcat(  # columns
-            (
-                vcat(
-                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
-                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
-                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
-
-                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
-                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
-                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
-
-                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
-                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
-                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
-                ) for i=1:num_i
-            )...
-        ),
-        vcat(
-            (
-                vcat(
-                    fill(F[1, 1, i], (a-1)*(a-1)),  #  "10"
-                    fill(F[1, 2, i], a*(a-1)    ),  #  "40"
-                    fill(F[1, 3, i], (a-1)*(a-1)),  #  "70"
-
-                    fill(F[2, 1, i], a*(a-1)    ),  #  "20"
-                    fill(F[2, 2, i], a*a        ),  #  "50"
-                    fill(F[2, 3, i], a*(a-1)    ),  #  "80"
-
-                    fill(F[3, 1, i], (a-1)*(a-1)),  #  "30"
-                    fill(F[3, 2, i], a*(a-1)    ),  #  "60"
-                    fill(F[3, 3, i], (a-1)*(a-1)),  #  "90"
-                ) for i=1:num_i
-            )...
-        ),
-        a*a,
-        a*a*num_i,
-    ) |> dropzeros!
-    FF_sp |> tshow
-
     II = vec(I)
 
+    print("\x1b[31m")
+    @time O = begin
+        FF_sp = sparse(
+            vcat(  # rows
+                (
+                    vcat(
+                        ((2:a  ) .+ (c-1)*a for c=2:a  )...,
+                        ((2:a  ) .+ (c-1)*a for c=1:a  )...,
+                        ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+                        ((1:a  ) .+ (c-1)*a for c=2:a  )...,
+                        ((1:a  ) .+ (c-1)*a for c=1:a  )...,
+                        ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+                        ((1:a-1) .+ (c-1)*a for c=2:a  )...,
+                        ((1:a-1) .+ (c-1)*a for c=1:a  )...,
+                        ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
+                    ) for i=1:num_i
+                )...
+            ),
+            vcat(  # columns
+                (
+                    vcat(
+                        ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                        ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                        ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+
+                        ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                        ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                        ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+
+                        ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
+                        ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
+                        ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+                    ) for i=1:num_i
+                )...
+            ),
+            vcat(
+                (
+                    vcat(
+                        fill(F[1, 1, i], (a-1)*(a-1)),  #  "10"
+                        fill(F[1, 2, i], a*(a-1)    ),  #  "40"
+                        fill(F[1, 3, i], (a-1)*(a-1)),  #  "70"
+
+                        fill(F[2, 1, i], a*(a-1)    ),  #  "20"
+                        fill(F[2, 2, i], a*a        ),  #  "50"
+                        fill(F[2, 3, i], a*(a-1)    ),  #  "80"
+
+                        fill(F[3, 1, i], (a-1)*(a-1)),  #  "30"
+                        fill(F[3, 2, i], a*(a-1)    ),  #  "60"
+                        fill(F[3, 3, i], (a-1)*(a-1)),  #  "90"
+                    ) for i=1:num_i
+                )...
+            ),
+            a*a,
+            a*a*num_i,
+        )
+        reshape(FF_sp * II, (a, a))
+    end
+    O |> tshow
+    print("\x1b[39m")
+
+    print("\x1b[32m")
+    @time O = begin
+        F_ = eachslice(F, dims=3)  # [i][x, y]
+        I_ = eachslice(I, dims=3)  # [i][x, y]
+
+        rows = vcat(  # rows
+            ((2:a  ) .+ (c-1)*a for c=2:a  )...,
+            ((2:a  ) .+ (c-1)*a for c=1:a  )...,
+            ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+            ((1:a  ) .+ (c-1)*a for c=2:a  )...,
+            ((1:a  ) .+ (c-1)*a for c=1:a  )...,
+            ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+            ((1:a-1) .+ (c-1)*a for c=2:a  )...,
+            ((1:a-1) .+ (c-1)*a for c=1:a  )...,
+            ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
+        )
+        cols = vcat(  # cols
+            ((1:a-1) .+ (r-1)*a for r=1:a-1)...,
+            ((1:a-1) .+ (r-1)*a for r=1:a  )...,
+            ((1:a-1) .+ (r-1)*a for r=2:a  )...,
+
+            ((1:a  ) .+ (r-1)*a for r=1:a-1)...,
+            ((1:a  ) .+ (r-1)*a for r=1:a  )...,
+            ((1:a  ) .+ (r-1)*a for r=2:a  )...,
+
+            ((2:a  ) .+ (r-1)*a for r=1:a-1)...,
+            ((2:a  ) .+ (r-1)*a for r=1:a  )...,
+            ((2:a  ) .+ (r-1)*a for r=2:a  )...,
+        )
+        OOi = get_OOi.(F_, I_, a, Ref(rows), Ref(cols))  # [i][xy]
+        result = stack(OOi)  # [xy, i]
+        result = sum(result, dims=2)  # [xy]
+        reshape(result, (a, a))  # [x, y]
+    end
+    O |> tshow
+    print("\x1b[39m")
+
+    #=
+    @time FF_sp_noi = sparse(
+        vcat(  # rows
+            ((2:a  ) .+ (c-1)*a for c=2:a  )...,
+            ((2:a  ) .+ (c-1)*a for c=1:a  )...,
+            ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+            ((1:a  ) .+ (c-1)*a for c=2:a  )...,
+            ((1:a  ) .+ (c-1)*a for c=1:a  )...,
+            ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+            ((1:a-1) .+ (c-1)*a for c=2:a  )...,
+            ((1:a-1) .+ (c-1)*a for c=1:a  )...,
+            ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
+        ),
+        vcat(  # cols
+            ((1:a-1) .+ (r-1)*a for r=1:a-1)...,
+            ((1:a-1) .+ (r-1)*a for r=1:a  )...,
+            ((1:a-1) .+ (r-1)*a for r=2:a  )...,
+
+            ((1:a  ) .+ (r-1)*a for r=1:a-1)...,
+            ((1:a  ) .+ (r-1)*a for r=1:a  )...,
+            ((1:a  ) .+ (r-1)*a for r=2:a  )...,
+
+            ((2:a  ) .+ (r-1)*a for r=1:a-1)...,
+            ((2:a  ) .+ (r-1)*a for r=1:a  )...,
+            ((2:a  ) .+ (r-1)*a for r=2:a  )...,
+        ),
+        vcat(  # vals
+            fill(F[1, 1], (a-1)*(a-1)),  #  "10"
+            fill(F[1, 2], a*(a-1)    ),  #  "40"
+            fill(F[1, 3], (a-1)*(a-1)),  #  "70"
+
+            fill(F[2, 1], a*(a-1)    ),  #  "20"
+            fill(F[2, 2], a*a        ),  #  "50"
+            fill(F[2, 3], a*(a-1)    ),  #  "80"
+
+            fill(F[3, 1], (a-1)*(a-1)),  #  "30"
+            fill(F[3, 2], a*(a-1)    ),  #  "60"
+            fill(F[3, 3], (a-1)*(a-1)),  #  "90"
+        ),
+        a*a,
+        a*a,
+    )
+    FF_sp |> tshow
+
+    reshape(FF_sp__ * II, (a, a)) |> tshow
+    =#
+
+    #=
     z = zero(eltype(F))
     @time FF_sp_ = sparse_hcat(
         (
@@ -96,8 +210,10 @@ function conv2d_new_new(I, F)
         )...
     )
     FF_sp_ |> tshow
+    =#
 
     # incorrect
+    #=
     @time FF_sp__ = spdiagm(
         a*a,
         a*a*num_i,
@@ -120,9 +236,8 @@ function conv2d_new_new(I, F)
         )...
     ) |> dropzeros!
     FF_sp__ |> tshow
+    =#
 
-    reshape(FF_sp * II, (a, a)) |> tshow
-    reshape(FF_sp__ * II, (a, a)) |> tshow
 end
 
 #=
@@ -208,8 +323,8 @@ F = [
 conv2d_new_new(I, F)
 =#
 
-I = rand(64, 64, 64)
-F = rand(3, 3, 64)
+I = rand(64, 64, 512)
+F = rand(3, 3, 512)
 
 F |> tshow
 

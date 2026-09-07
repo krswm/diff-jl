@@ -71,71 +71,35 @@ function conv2d_1x1(x, wc, bc)
     stack(result)
 end
 
-function conv2d_3x3_inner(x_vec, wc, bc, a, num_i)
-    # wc [x, y, i]
-    print("wc_doubleblock")
-    @time wc_doubleblock = sparse(
-        vcat(  # rows
-            (
-                vcat(
-                    ((2:a  ) .+ (c-1)*a for c=2:a  )...,
-                    ((2:a  ) .+ (c-1)*a for c=1:a  )...,
-                    ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
+function get_OOi(Fi, Ii, a, rows, cols)
+    vals = vcat(  # vals
+        fill(Fi[1, 1], (a-1)*(a-1)),  #  "10"
+        fill(Fi[1, 2], a*(a-1)    ),  #  "40"
+        fill(Fi[1, 3], (a-1)*(a-1)),  #  "70"
 
-                    ((1:a  ) .+ (c-1)*a for c=2:a  )...,
-                    ((1:a  ) .+ (c-1)*a for c=1:a  )...,
-                    ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
+        fill(Fi[2, 1], a*(a-1)    ),  #  "20"
+        fill(Fi[2, 2], a*a        ),  #  "50"
+        fill(Fi[2, 3], a*(a-1)    ),  #  "80"
 
-                    ((1:a-1) .+ (c-1)*a for c=2:a  )...,
-                    ((1:a-1) .+ (c-1)*a for c=1:a  )...,
-                    ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
-                ) for i=1:num_i
-            )...
-        ),
-        vcat(  # columns
-            (
-                vcat(
-                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
-                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
-                    ((1:a-1) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+        fill(Fi[3, 1], (a-1)*(a-1)),  #  "30"
+        fill(Fi[3, 2], a*(a-1)    ),  #  "60"
+        fill(Fi[3, 3], (a-1)*(a-1)),  #  "90"
+    )
+    FFi_sp = sparse(rows, cols, vals)
+    IIi = vec(Ii)
+    FFi_sp * IIi
+end
 
-                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
-                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
-                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
+function conv2d_3x3_inner(wc, bc, a, num_i, x, rows, cols)
+    @time begin
+        F_ = eachslice(wc, dims=3)  # [i][x, y]
+        I_ = eachslice(x, dims=3)  # [i][x, y]
 
-                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a-1)...,
-                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
-                    ((2:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=2:a  )...,
-                ) for i=1:num_i
-            )...
-        ),
-        vcat(
-            (
-                vcat(
-                    fill(wc[1, 1, i], (a-1)*(a-1)),  #  "10"
-                    fill(wc[1, 2, i], a*(a-1)    ),  #  "40"
-                    fill(wc[1, 3, i], (a-1)*(a-1)),  #  "70"
-
-                    fill(wc[2, 1, i], a*(a-1)    ),  #  "20"
-                    fill(wc[2, 2, i], a*a        ),  #  "50"
-                    fill(wc[2, 3, i], a*(a-1)    ),  #  "80"
-
-                    fill(wc[3, 1, i], (a-1)*(a-1)),  #  "30"
-                    fill(wc[3, 2, i], a*(a-1)    ),  #  "60"
-                    fill(wc[3, 3, i], (a-1)*(a-1)),  #  "90"
-                ) for i=1:num_i
-            )...
-        ),
-        a*a,
-        a*a*num_i,
-    ) |> dropzeros!  # [α, αᵢ]
-
-    # x_vec [αᵢ]
-    # bc (scalar)
-    print("result")
-    @time result = wc_doubleblock * x_vec .+ bc  # [α]
-    print("reshape")
-    @time reshape(result, (a, a))  # [x, y]
+        OOi = get_OOi.(F_, I_, a, Ref(rows), Ref(cols))  # [i][xy]
+        result = stack(OOi)  # [xy, i]
+        result = sum(result, dims=2)  # [xy]
+        reshape(result, (a, a))  # [x, y]
+    end
 end
 
 function conv2d_3x3(x, wc, bc)
@@ -156,9 +120,36 @@ function conv2d_3x3(x, wc, bc)
     num_o_, = size(bc)
     @assert num_o_ == num_o
 
-    vec_x = vec(x)  # [αᵢ]
+    println((num_x, num_y, num_i, num_o))
 
-    result = conv2d_3x3_inner.(Ref(vec_x), wc, bc, a, num_i)  # [o][x, y]
+    rows = vcat(  # rows
+        ((2:a  ) .+ (c-1)*a for c=2:a  )...,
+        ((2:a  ) .+ (c-1)*a for c=1:a  )...,
+        ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+        ((1:a  ) .+ (c-1)*a for c=2:a  )...,
+        ((1:a  ) .+ (c-1)*a for c=1:a  )...,
+        ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
+
+        ((1:a-1) .+ (c-1)*a for c=2:a  )...,
+        ((1:a-1) .+ (c-1)*a for c=1:a  )...,
+        ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
+    )
+    cols = vcat(  # cols
+        ((1:a-1) .+ (r-1)*a for r=1:a-1)...,
+        ((1:a-1) .+ (r-1)*a for r=1:a  )...,
+        ((1:a-1) .+ (r-1)*a for r=2:a  )...,
+
+        ((1:a  ) .+ (r-1)*a for r=1:a-1)...,
+        ((1:a  ) .+ (r-1)*a for r=1:a  )...,
+        ((1:a  ) .+ (r-1)*a for r=2:a  )...,
+
+        ((2:a  ) .+ (r-1)*a for r=1:a-1)...,
+        ((2:a  ) .+ (r-1)*a for r=1:a  )...,
+        ((2:a  ) .+ (r-1)*a for r=2:a  )...,
+    )
+
+    result = conv2d_3x3_inner.(wc, bc, a, num_i, Ref(x), Ref(rows), Ref(cols))  # [o][x, y]
     stack(result)
 end
 
