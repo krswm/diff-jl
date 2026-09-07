@@ -438,13 +438,14 @@ end
 # Decoder convolution
 struct Dconv
     wc::Array{Float32, 4}  # [x, y, i, o]
-    bc::Vector{Float32}  # [o]
+    bc::Array{Float32, 4}  # [x, y, o, n]
 end
 
 function get_dconv(tensors, prefix)
     wc = tensors["$prefix.weight"]  # [o, i, y, x]
     wc = permutedims(wc, (4, 3, 2, 1))  # [x, y, i, o]
     bc = tensors["$prefix.bias"]  # [o]
+    bc = insertdims(bc, dims=(1, 2, 4))  # [x, y, o, n]
     Dconv(wc, bc)
 end
 
@@ -453,11 +454,11 @@ struct Drblock
     g1::Vector{Float32}
     t1::Vector{Float32}
     wc1::Array{Float32, 4}
-    bc1::Vector{Float32}
+    bc1::Array{Float32, 4}
     g2::Vector{Float32}
     t2::Vector{Float32}
     wc2::Array{Float32, 4}
-    bc2::Vector{Float32}
+    bc2::Array{Float32, 4}
 end
 
 function get_drblock(tensors, prefix)
@@ -466,11 +467,13 @@ function get_drblock(tensors, prefix)
     wc1 = tensors["$prefix.conv1.weight"]  # [o, i, y, x]
     wc1 = permutedims(wc1, (4, 3, 2, 1))  # [x, y, i, o]
     bc1 = tensors["$prefix.conv1.bias"]
+    bc1 = insertdims(bc1, dims=(1, 2, 4))  # [x, y, o, n]
     g2  = tensors["$prefix.norm2.weight"]
     t2  = tensors["$prefix.norm2.bias"]
     wc2 = tensors["$prefix.conv2.weight"]  # [o, i, y, x]
     wc2 = permutedims(wc2, (4, 3, 2, 1))  # [x, y, i, o]
-    bc2 = tensors["$prefix.conv2.bias"]
+    bc2 = tensors["$prefix.conv2.bias"]  # [x, y, o, n]
+    bc2 = insertdims(bc2, dims=(1, 2, 4))  # [x, y, o, n]
     Drblock(g1, t1, wc1, bc1, g2, t2, wc2, bc2)
 end
 

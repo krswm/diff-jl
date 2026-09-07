@@ -1,6 +1,7 @@
 using SparseArrays
 using Statistics
 
+using Flux  # For `conv`.
 using JSON
 using SafeTensors
 
@@ -13,146 +14,6 @@ function tshow(x)
     println()
 end
 
-function conv2d_1x1_inner(x_vec, wc, bc, a, num_i)
-    # wc [x, y, i]
-    wc_doubleblock = sparse(
-        vcat(  # rows
-            (
-                vcat(
-                    ((1:a  ) .+ (c-1)*a for c=1:a  )...,
-                ) for i=1:num_i
-            )...
-        ),
-        vcat(  # columns
-            (
-                vcat(
-                    ((1:a  ) .+ (r-1)*a .+ (i-1)*a*a for r=1:a  )...,
-                ) for i=1:num_i
-            )...
-        ),
-        vcat(
-            (
-                vcat(
-                    fill(wc[1, 1, i], a*a        ),  #  "50"
-                ) for i=1:num_i
-            )...
-        ),
-        a*a,
-        a*a*num_i,
-    ) |> dropzeros!  # [α, αᵢ]
-
-    # x_vec [αᵢ]
-    # bc (scalar)
-    result = wc_doubleblock * x_vec .+ bc  # [α]
-    reshape(result, (a, a))  # [x, y]
-end
-
-function conv2d_1x1(x, wc, bc)
-    @assert ndims(x) == 3    
-    num_x, num_y, num_i = size(x)
-    @assert num_x == num_y  # My implementation supports only square image currently.
-    a = num_x
-
-    @assert ndims(wc) == 4
-    @assert eltype(wc) == eltype(x)
-    num_ξ, num_η, num_i_, num_o = size(wc)
-    @assert num_ξ == num_η == 1
-    @assert num_i_ == num_i
-    wc = eachslice(wc, dims=4)  # [o][ξ, η, i]
-
-    @assert ndims(bc) == 1
-    @assert eltype(bc) == eltype(x)
-    num_o_, = size(bc)
-    @assert num_o_ == num_o
-
-    vec_x = vec(x)  # [αᵢ]
-
-    result = conv2d_1x1_inner.(Ref(vec_x), wc, bc, a, num_i)  # [o][x, y]
-    stack(result)
-end
-
-function get_OOi(Fi, Ii, a, rows, cols)
-    vals = vcat(  # vals
-        fill(Fi[1, 1], (a-1)*(a-1)),  #  "10"
-        fill(Fi[1, 2], a*(a-1)    ),  #  "40"
-        fill(Fi[1, 3], (a-1)*(a-1)),  #  "70"
-
-        fill(Fi[2, 1], a*(a-1)    ),  #  "20"
-        fill(Fi[2, 2], a*a        ),  #  "50"
-        fill(Fi[2, 3], a*(a-1)    ),  #  "80"
-
-        fill(Fi[3, 1], (a-1)*(a-1)),  #  "30"
-        fill(Fi[3, 2], a*(a-1)    ),  #  "60"
-        fill(Fi[3, 3], (a-1)*(a-1)),  #  "90"
-    )
-    FFi_sp = sparse(rows, cols, vals)
-    IIi = vec(Ii)
-    FFi_sp * IIi
-end
-
-function conv2d_3x3_inner(wc, bc, a, num_i, x, rows, cols)
-    @time begin
-        F_ = eachslice(wc, dims=3)  # [i][x, y]
-        I_ = eachslice(x, dims=3)  # [i][x, y]
-
-        OOi = get_OOi.(F_, I_, a, Ref(rows), Ref(cols))  # [i][xy]
-        result = stack(OOi)  # [xy, i]
-        result = sum(result, dims=2)  # [xy]
-        reshape(result, (a, a))  # [x, y]
-    end
-end
-
-function conv2d_3x3(x, wc, bc)
-    @assert ndims(x) == 3    
-    num_x, num_y, num_i = size(x)
-    @assert num_x == num_y  # My implementation supports only square image currently.
-    a = num_x
-
-    @assert ndims(wc) == 4
-    @assert eltype(wc) == eltype(x)
-    num_ξ, num_η, num_i_, num_o = size(wc)
-    @assert num_ξ == num_η == 3 "$(size(wc))"
-    @assert num_i_ == num_i
-    wc = eachslice(wc, dims=4)  # [o][ξ, η, i]
-
-    @assert ndims(bc) == 1
-    @assert eltype(bc) == eltype(x)
-    num_o_, = size(bc)
-    @assert num_o_ == num_o
-
-    println((num_x, num_y, num_i, num_o))
-
-    rows = vcat(  # rows
-        ((2:a  ) .+ (c-1)*a for c=2:a  )...,
-        ((2:a  ) .+ (c-1)*a for c=1:a  )...,
-        ((2:a  ) .+ (c-1)*a for c=1:a-1)...,
-
-        ((1:a  ) .+ (c-1)*a for c=2:a  )...,
-        ((1:a  ) .+ (c-1)*a for c=1:a  )...,
-        ((1:a  ) .+ (c-1)*a for c=1:a-1)...,
-
-        ((1:a-1) .+ (c-1)*a for c=2:a  )...,
-        ((1:a-1) .+ (c-1)*a for c=1:a  )...,
-        ((1:a-1) .+ (c-1)*a for c=1:a-1)...,
-    )
-    cols = vcat(  # cols
-        ((1:a-1) .+ (r-1)*a for r=1:a-1)...,
-        ((1:a-1) .+ (r-1)*a for r=1:a  )...,
-        ((1:a-1) .+ (r-1)*a for r=2:a  )...,
-
-        ((1:a  ) .+ (r-1)*a for r=1:a-1)...,
-        ((1:a  ) .+ (r-1)*a for r=1:a  )...,
-        ((1:a  ) .+ (r-1)*a for r=2:a  )...,
-
-        ((2:a  ) .+ (r-1)*a for r=1:a-1)...,
-        ((2:a  ) .+ (r-1)*a for r=1:a  )...,
-        ((2:a  ) .+ (r-1)*a for r=2:a  )...,
-    )
-
-    result = conv2d_3x3_inner.(wc, bc, a, num_i, Ref(x), Ref(rows), Ref(cols))  # [o][x, y]
-    stack(result)
-end
-
 function norm_inner(x, g, t, x_mean, x_var)
     # x [...]
     # g (scalar)
@@ -163,79 +24,57 @@ function norm_inner(x, g, t, x_mean, x_var)
 end
 
 function groupnorm(x, g, t)
-    # x [x, y, o]
+    # x [x, y, o, n]
     # g [o]
     # t [o]
-    num_x, num_y, num_o = size(x)
+    num_x, num_y, num_o, num_n = size(x)
     num_g = 32
     num_o ÷ num_g == 0
     # j: Index inside a group
     num_j = num_o ÷ num_g
 
-    y = reshape(x, (num_x, num_y, num_j, num_g))  # [x, y, j, g]
-    y_mean = mean(y, dims=(1, 2, 3))  # [g]
-    y_mean = [y_mean[(o - 1) ÷ num_j + 1] for o ∈ 1:num_o]  # [o]
-    y_var = var(y, dims=(1, 2, 3))  # [g]
-    y_var = [y_var[(o - 1) ÷ num_j + 1] for o ∈ 1:num_o]  # [o]
-    x = eachslice(x, dims=3)  # [o][x, y]
-    x = norm_inner.(x, g, t, y_mean, y_var)  # [o][x, y]
-    stack(x)  # [x, y, o]
+    y = reshape(x, (num_x, num_y, num_j, num_g, num_n))  # [x, y, j, g, n]
+    y_mean = mean(y, dims=(1, 2, 3))  # [x, y, j, g, n] (x=1, y=1, j=1 only)
+    y_mean = [y_mean[1, 1, 1, (o - 1) ÷ num_j + 1, n] for o=1:num_o, n=1:num_n]  # [o, n]
+    y_var = var(y, dims=(1, 2, 3))  # [x, y, j, g, n] (x=1, y=1, j=1 only)
+    y_var = [y_var[1, 1, 1, (o - 1) ÷ num_j + 1, n] for o=1:num_o, n=1:num_n]  # [o, n]
+    x = eachslice(x, dims=(3, 4))  # [o, n][x, y]
+    x = [norm_inner(x[o, n], g[o], t[o], y_mean[o, n], y_var[o, n]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
+    stack(x)  # [x, y, o, n]
 end
-    
-#=
-function groupnorm
-
-function groupnorm_(x, g, t, num_g)
-    # x [xy, o]
-    # g [o]
-    # t [o]
-    # `num_g`: number of groups
-    num_xy, num_o = size(x)
-    @assert num_o % num_g == 0
-    # j: Index inside a group
-    num_j = num_o ÷ num_g
-
-    y = reshape(x, (num_xy, num_j, num_g))  # [xy, j, g]
-    y = eachslice(y, dims=3)  # [g][xy, j]
-    y_mean = mean.(y)  # [g]
-    y_mean = [y_mean[(o - 1) ÷ num_j + 1] for o ∈ 1:num_o]  # [o]
-    y_var = var.(y)  # [g]
-    y_var = [y_var[(o - 1) ÷ num_j + 1] for o ∈ 1:num_o]  # [o]
-    x = eachslice(x, dims=2)  # [o][xy]
-    x = normnorm.(x, g, t, y_mean, y_var)  # [o][xy]
-    stack(x)  # [xy, o]
-end
-=#
 
 silu(x) = x / (exp(-x) + 1)
 
 function calc_drblock(x, drblock)
-    y = x  # [x, y, o]
-    x = groupnorm(x, drblock.g1, drblock.t1)  # [x, y, o]
-    x = silu.(x)  # [x, y, o]
-    x = conv2d_3x3(x, drblock.wc1, drblock.bc1)  # [x, y, o]  # <- VERY slow :(
-    x |> tshow
-    y
+    y = x  # [x, y, o, n]
+    x = groupnorm(x, drblock.g1, drblock.t1)  # [x, y, o, n]
+    x = silu.(x)  # [x, y, o, n]
+    x = conv(x, drblock.wc1, stride=1, pad=1, flipped=true) .+ drblock.bc1
+    x = groupnorm(x, drblock.g2, drblock.t2)  # [x, y, o, n]
+    x = silu.(x)  # [x, y, o, n]
+    x = conv(x, drblock.wc2, stride=1, pad=1, flipped=true) .+ drblock.bc2
+    y + x
 end
 
 function decode(x, dmodel)
     @assert eltype(x) == Float32
-    @assert size(x) == (1, 4, 64, 64)
-    x = reshape(x, (4, 64, 64))  # [o₀, y, x]
-    x = permutedims(x, (3, 2, 1))  # [x, y, o₀]
+    @assert size(x) == (1, 4, 64, 64)  # [n, o, y, x]
+    x = permutedims(x, (4, 3, 2, 1))  # [x, y, o, n]
     @assert eltype(x) == Float32
-    @assert size(x) == (64, 64, 4)
+    @assert size(x) == (64, 64, 4, 1)
     x ./= 0.18215f0
     @assert eltype(x) == Float32
-    @assert size(x) == (64, 64, 4)
-    @time x = conv2d_1x1(x, dmodel.dconv_pq.wc, dmodel.dconv_pq.bc)
+    @assert size(x) == (64, 64, 4, 1)
+    x = conv(x, dmodel.dconv_pq.wc, stride=1, pad=0, flipped=true) .+ dmodel.dconv_pq.bc
     @assert eltype(x) == Float32
-    @assert size(x) == (64, 64, 4)
-    @time x = conv2d_3x3(x, dmodel.dconv_in.wc, dmodel.dconv_in.bc)
+    @assert size(x) == (64, 64, 4, 1)
+    x = conv(x, dmodel.dconv_in.wc, stride=1, pad=1, flipped=true) .+ dmodel.dconv_in.bc
     @assert eltype(x) == Float32
-    @assert size(x) == (64, 64, 512)
+    @assert size(x) == (64, 64, 512, 1)
     x = calc_drblock(x, dmodel.drblock_mid1)
     @assert eltype(x) == Float32
+    @assert size(x) == (64, 64, 512, 1)
+    x |> tshow
 end
 
 decref = load_safetensors("../../../Downloads/decref.safetensors")
