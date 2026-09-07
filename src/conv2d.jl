@@ -2,6 +2,16 @@
 # https://github.com/alisaaalehi/convolution_as_multiplication
 # Thank you for the author of the explanation PDF.
 
+# I learnt that there's a FFT-based convolution algorithm.
+# Maybe I'll implement it later, not now...
+#
+# My matmul-based implementation is not fast enough for 64x64x512ch image with 3x3x512ch kernel convolution...
+# It's been already taking me a couple days just only for convolution...
+# Let me cheat! --- That means, using an external NN library only for 2D convolutoion calculation.
+#
+# Flux.jl!
+using Flux
+
 using LinearAlgebra
 using SparseArrays
 
@@ -138,6 +148,13 @@ function conv2d_new_new(I, F)
         result = sum(result, dims=2)  # [xy]
         reshape(result, (a, a))  # [x, y]
     end
+    O |> tshow
+    print("\x1b[39m")
+
+    print("\x1b[33m")
+    I_ = insertdims(I, dims=4)
+    F_ = insertdims(F, dims=4)
+    @time O = conv(I_, F_, stride=1, pad=1)  # Over x10 faster than mine!? Memory usage about 1/7!?
     O |> tshow
     print("\x1b[39m")
 
