@@ -12,7 +12,7 @@ function tshow(x)
     println()
 end
 
-function conv2d_inner(x_vec, wc, bc, a, num_i)
+function conv2d_1x1_inner(x_vec, wc, bc, a, num_i)
     # wc [x, y, i]
     wc_doubleblock = sparse(
         vcat(  # rows
@@ -46,7 +46,7 @@ function conv2d_inner(x_vec, wc, bc, a, num_i)
     reshape(result, (a, a))  # [x, y]
 end
 
-function conv2d(x, wc, bc)
+function conv2d_1x1(x, wc, bc)
     # I found a nice explanation for how to calculate convolution efficiently.
     # https://github.com/alisaaalehi/convolution_as_multiplication
     # Thank you for the author of the explanation PDF.
@@ -59,7 +59,7 @@ function conv2d(x, wc, bc)
     @assert ndims(wc) == 4
     @assert eltype(wc) == eltype(x)
     num_ξ, num_η, num_i_, num_o = size(wc)
-    @assert num_ξ == num_η
+    @assert num_ξ == num_η == 1
     @assert num_i_ == num_i
     wc = eachslice(wc, dims=4)  # [o][ξ, η, i]
 
@@ -70,7 +70,7 @@ function conv2d(x, wc, bc)
 
     vec_x = vec(x)  # [αᵢ]
 
-    result = conv2d_inner.(Ref(vec_x), wc, bc, a, num_i)  # [o][x, y]
+    result = conv2d_1x1_inner.(Ref(vec_x), wc, bc, a, num_i)  # [o][x, y]
     stack(result)
 end
 
@@ -84,7 +84,7 @@ function decode(x, model)
     x ./= 0.18215f0
     @assert size(x) == (64, 64, 4)
     @assert eltype(x) == Float32
-    x = conv2d(x, model.conv_pq.wc, model.conv_pq.bc)
+    x = conv2d_1x1(x, model.conv_pq.wc, model.conv_pq.bc)
     @assert size(x) == (64, 64, 4)
     @assert eltype(x) == Float32
     x |> tshow
