@@ -16,7 +16,7 @@
 
 module Model
 
-export Layer, Model, get_decoder_model, get_model
+export Layer, Model, get_dmodel, get_model
 
 using JSON
 
@@ -435,29 +435,60 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     )
 end
 
-struct DecoderConv
+# Decoder convolution
+struct Dconv
     wc::Array{Float32, 4}  # [x, y, i, o]
     bc::Vector{Float32}  # [o]
 end
 
-function get_decoder_conv(tensors, prefix)
+function get_dconv(tensors, prefix)
     wc = tensors["$prefix.weight"]  # [o, i, y, x]
     wc = permutedims(wc, (4, 3, 2, 1))  # [x, y, i, o]
     bc = tensors["$prefix.bias"]  # [o]
-    DecoderConv(wc, bc)
+    Dconv(wc, bc)
 end
 
-struct DecoderModel
-    conv_pq::DecoderConv
-    conv_in::DecoderConv
+# Decoder residual block
+struct Drblock
+    g1::Vector{Float32}
+    t1::Vector{Float32}
+    wc1::Array{Float32, 4}
+    bc1::Vector{Float32}
+    g2::Vector{Float32}
+    t2::Vector{Float32}
+    wc2::Array{Float32, 4}
+    bc2::Vector{Float32}
 end
 
-function get_decoder_model(tensors)
-    conv_pq = get_decoder_conv(tensors, "first_stage_model.post_quant_conv")
-    conv_in = get_decoder_conv(tensors, "first_stage_model.decoder.conv_in")
-    DecoderModel(
-        conv_pq,
-        conv_in,
+function get_drblock(tensors, prefix)
+    g1  = tensors["$prefix.norm1.weight"]
+    t1  = tensors["$prefix.norm1.bias"]
+    wc1 = tensors["$prefix.conv1.weight"]  # [o, i, y, x]
+    wc1 = permutedims(wc1, (4, 3, 2, 1))  # [x, y, i, o]
+    bc1 = tensors["$prefix.conv1.bias"]
+    g2  = tensors["$prefix.norm2.weight"]
+    t2  = tensors["$prefix.norm2.bias"]
+    wc2 = tensors["$prefix.conv2.weight"]  # [o, i, y, x]
+    wc2 = permutedims(wc2, (4, 3, 2, 1))  # [x, y, i, o]
+    bc2 = tensors["$prefix.conv2.bias"]
+    Drblock(g1, t1, wc1, bc1, g2, t2, wc2, bc2)
+end
+
+# Decoder model
+struct Dmodel
+    dconv_pq::Dconv
+    dconv_in::Dconv
+    drblock_mid1::Drblock
+end
+
+function get_dmodel(tensors)
+    dconv_pq = get_dconv(tensors, "first_stage_model.post_quant_conv")
+    dconv_in = get_dconv(tensors, "first_stage_model.decoder.conv_in")
+    drblock_mid1 = get_drblock(tensors, "first_stage_model.decoder.mid.block_1")
+    Dmodel(
+        dconv_pq,
+        dconv_in,
+        drblock_mid1,
     )
 end
 
