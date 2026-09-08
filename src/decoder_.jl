@@ -37,10 +37,25 @@ function groupnorm(x, g, t)
     y = reshape(x, (num_x, num_y, num_j, num_g, num_n))  # [x, y, j, g, n]
     y_mean = mean(y, dims=(1, 2, 3))  # [x, y, j, g, n] (x=1, y=1, j=1 only)
     y_mean = [y_mean[1, 1, 1, (o - 1) ÷ num_j + 1, n] for o=1:num_o, n=1:num_n]  # [o, n]
-    y_var = var(y, dims=(1, 2, 3))  # [x, y, j, g, n] (x=1, y=1, j=1 only)
+    y_var = var(y, dims=(1, 2, 3), corrected=false)  # [x, y, j, g, n] (x=1, y=1, j=1 only)
     y_var = [y_var[1, 1, 1, (o - 1) ÷ num_j + 1, n] for o=1:num_o, n=1:num_n]  # [o, n]
     x = eachslice(x, dims=(3, 4))  # [o, n][x, y]
     x = [norm_inner(x[o, n], g[o], t[o], y_mean[o, n], y_var[o, n]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
+    stack(x)  # [x, y, o, n]
+end
+
+function layernorm(x, g, t)
+    # x [x, y, o, n]
+    # g [o]
+    # t [o]
+    num_x, num_y, num_o, num_n = size(x)
+
+    x_mean = mean(x, dims=(1, 2, 3))  # [x, y, o, n] (x=1, y=1, o=1 only)
+    x_mean = reshape(x_mean, (num_n,))  # [o, n]
+    x_var = var(x, dims=(1, 2, 3))  # [x, y, o, n] (x=1, y=1, o=1 only)
+    x_var = reshape(x_var, (num_n,))  # [o, n]
+    x = eachslice(x, dims=(3, 4))  # [o, n][x, y]
+    x = [norm_inner(x[o, n], g[o], t[o], x_mean[n], x_var[n]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
     stack(x)  # [x, y, o, n]
 end
 
@@ -253,6 +268,68 @@ function calc_frcblock(x, f, frcblock)
     x + (conv(y, frcblock.wc3, stride=1, pad=0, flipped=true) .+ frcblock.bc3)
 end
 
+function layernorm(x, g, t)
+    # x [xy, o]
+    x_mean = mean(x, dims=2)  # [xy, 1]
+    x_var = var(x, dims=2, corrected=false)  # [xy, 1]
+
+    # g [o]
+    g = insertdims(g, dims=1)  # [1, o]
+    # t [o]
+    t = insertdims(t, dims=1)  # [1, o]
+
+    g .* (x .- x_mean) ./ .√(x_var .+ 1f-5) .+ t  # [xy, o]
+end
+
+function cross_attention(x, c, w1q, w1k, w1v, w2, b2)
+    # x [xy, o]
+    # c [embd, ctx]
+    # w1q [o', o]
+    # w1k [o', embd]
+    # w1v [o', embd]
+    # w2 [o, o]
+    # b2 [o]
+    
+
+    x |> size |> println
+    c |> size |> println
+    w1q |> size |> println
+    w1k |> size |> println
+    w1v |> size |> println
+    w2 |> size |> println
+    b2 |> size |> println
+end
+
+function calc_fablock(x, c, fablock)
+    # x [x, y, o, n]
+    num_x, num_y, num_o, num_n = size(x)
+    num_xy = num_x * num_y
+
+    y = x  # [x, y, o, n]
+
+    x = groupnorm(x, fablock.g1, fablock.t1)  # [x, y, o, n]
+    x = conv(x, fablock.wc1, stride=1, pad=0, flipped=true) .+ fablock.bc1  # [x, y, o, n]
+
+    x = reshape(x, (num_xy, num_o, num_n))  # [xy, o, n]
+    x = eachslice(x, dims=3)  # [n][xy, o]
+
+    z = x  # [n][xy, o]
+    z = layernorm.(x, Ref(fablock.g2), Ref(fablock.t2))  # [n][xy, o]
+    z = self_attention.(z, Ref(fablock.w21), Ref(fablock.b21), Ref(fablock.w22), Ref(fablock.b22), 8)  # [n][xy, o]
+    x += z  # [n][xy, o]
+    z = x  # [n][xy, o]
+    z = layernorm.(x, Ref(fablock.g3), Ref(fablock.t3))  # [n][xy, o]
+    c = eachslice(c, dims=3)  # [n][xy, o]
+    z = cross_attention.(z, c, Ref(fablock.w31q), Ref(fablock.w31k), Ref(fablock.w31v), Ref(fablock.w32), Ref(fablock.b32))  # [n][xy, o]
+    z[1] |> tshow
+    exit()
+    
+    x = stack(x)  # [xy, o, n]
+    x = reshape(x, (num_x, num_y, num_o, num_n))  # [x, y, o, n]
+    y += x
+    y
+end
+
 function denoise(x, c, t, prev_t, fmodel)
     println("==== t = $t ====")
 
@@ -270,7 +347,8 @@ function denoise(x, c, t, prev_t, fmodel)
     s0 = x
     print("1.0 ")
     @time x = calc_frblock(x, f, fmodel.frblock_i1)
-    x |> tshow
+    print("1.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_i1)
 end
 
 function diffuse(c, fmodel)
@@ -285,5 +363,5 @@ fmodel = begin
     tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
     get_fmodel(tensors)
 end
-c = permutedims(decref["c"], (3, 2, 1))  # [ctx, idx, n]
+c = permutedims(decref["c"], (3, 2, 1))  # [ctx, embd, n]
 diffuse(c, fmodel)

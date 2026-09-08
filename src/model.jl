@@ -738,6 +738,87 @@ function get_frcblock(tensors, prefix)
     Frcblock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2, wc3, bc3)
 end
 
+# Diffusion attention block
+struct Fablock
+    g1::Vector{Float32}
+    t1::Vector{Float32}
+    wc1::Array{Float32, 4}
+    bc1::Array{Float32, 4}
+
+    g2::Vector{Float32}
+    t2::Vector{Float32}
+    w21::Matrix{Float32}
+    b21::Matrix{Float32}
+    w22::Matrix{Float32}
+    b22::Matrix{Float32}
+
+    g3::Vector{Float32}
+    t3::Vector{Float32}
+    w31q::Matrix{Float32}
+    w31k::Matrix{Float32}
+    w31v::Matrix{Float32}
+    w32::Matrix{Float32}
+    b32::Vector{Float32}
+
+    g4::Vector{Float32}
+    t4::Vector{Float32}
+    w41::Matrix{Float32}
+    b41::Vector{Float32}
+    w42::Matrix{Float32}
+    b42::Vector{Float32}
+    wc4::Array{Float32, 4}
+    bc4::Array{Float32, 4}
+end
+
+function get_fablock(tensors, prefix)
+    g1   = tensors["$prefix.norm.weight"]
+    t1   = tensors["$prefix.norm.bias"]
+    wc1  = tensors["$prefix.proj_in.weight"]
+    wc1  = permutedims(wc1, (4, 3, 2, 1))
+    bc1  = tensors["$prefix.proj_in.bias"]
+    bc1  = insertdims(bc1, dims=(1, 2, 4))
+
+    g2   = tensors["$prefix.transformer_blocks.0.norm1.weight"]
+    t2   = tensors["$prefix.transformer_blocks.0.norm1.bias"]
+    w21  = vcat(
+        tensors["$prefix.transformer_blocks.0.attn1.to_q.weight"],
+        tensors["$prefix.transformer_blocks.0.attn1.to_k.weight"],
+        tensors["$prefix.transformer_blocks.0.attn1.to_v.weight"],
+    )
+    w21  = permutedims(w21, (2, 1))
+    b21  = zeros(1, size(w21, 2))
+    w22  = tensors["$prefix.transformer_blocks.0.attn1.to_out.0.weight"]
+    w22  = permutedims(w22, (2, 1))
+    b22  = tensors["$prefix.transformer_blocks.0.attn1.to_out.0.bias"]
+    b22  = insertdims(b22, dims=1)
+
+    g3   = tensors["$prefix.transformer_blocks.0.norm2.weight"]
+    t3   = tensors["$prefix.transformer_blocks.0.norm2.bias"]
+    w31q = tensors["$prefix.transformer_blocks.0.attn2.to_q.weight"]
+    w31k = tensors["$prefix.transformer_blocks.0.attn2.to_k.weight"]
+    w31v = tensors["$prefix.transformer_blocks.0.attn2.to_v.weight"]
+    w32  = tensors["$prefix.transformer_blocks.0.attn2.to_out.0.weight"] 
+    b32  = tensors["$prefix.transformer_blocks.0.attn2.to_out.0.bias"] 
+
+    g4   = tensors["$prefix.transformer_blocks.0.norm3.weight"]
+    t4   = tensors["$prefix.transformer_blocks.0.norm3.bias"]
+    w41  = tensors["$prefix.transformer_blocks.0.ff.net.0.proj.weight"]
+    b41  = tensors["$prefix.transformer_blocks.0.ff.net.0.proj.bias"]
+    w42  = tensors["$prefix.transformer_blocks.0.ff.net.2.weight"]
+    b42  = tensors["$prefix.transformer_blocks.0.ff.net.2.bias"]
+    wc4  = tensors["$prefix.proj_out.weight"]
+    wc4  = permutedims(wc4, (4, 3, 2, 1))
+    bc4  = tensors["$prefix.proj_out.bias"]
+    bc4  = insertdims(bc4, dims=(1, 2, 4))
+
+    Fablock(
+        g1, t1, wc1, bc1,
+        g2, t2, w21, b21, w22, b22,
+        g3, t3, w31q, w31k, w31v, w32, b32,
+        g4, t4, w41, b41, w42, b42, wc4, bc4,
+    )
+end
+
 # diffusion model
 struct Fmodel
     time_w1::Matrix{Float32}
@@ -773,6 +854,22 @@ struct Fmodel
     frcblock_o9::Frcblock
     frcblock_o10::Frcblock
     frcblock_o11::Frcblock
+    fablock_i1::Fablock
+    fablock_i2::Fablock
+    fablock_i4::Fablock
+    fablock_i5::Fablock
+    fablock_i7::Fablock
+    fablock_i8::Fablock
+    fablock_m1::Fablock
+    fablock_o3::Fablock
+    fablock_o4::Fablock
+    fablock_o5::Fablock
+    fablock_o6::Fablock
+    fablock_o7::Fablock
+    fablock_o8::Fablock
+    fablock_o9::Fablock
+    fablock_o10::Fablock
+    fablock_o11::Fablock
 end
 
 function get_fmodel(tensors)
@@ -809,6 +906,22 @@ function get_fmodel(tensors)
     frcblock_o9  = get_frcblock(tensors, "model.diffusion_model.output_blocks.9.0")
     frcblock_o10 = get_frcblock(tensors, "model.diffusion_model.output_blocks.10.0")
     frcblock_o11 = get_frcblock(tensors, "model.diffusion_model.output_blocks.11.0")
+    fablock_i1  = get_fablock(tensors, "model.diffusion_model.input_blocks.1.1")
+    fablock_i2  = get_fablock(tensors, "model.diffusion_model.input_blocks.2.1")
+    fablock_i4  = get_fablock(tensors, "model.diffusion_model.input_blocks.4.1")
+    fablock_i5  = get_fablock(tensors, "model.diffusion_model.input_blocks.5.1")
+    fablock_i7  = get_fablock(tensors, "model.diffusion_model.input_blocks.7.1")
+    fablock_i8  = get_fablock(tensors, "model.diffusion_model.input_blocks.8.1")
+    fablock_m1  = get_fablock(tensors, "model.diffusion_model.middle_block.1")
+    fablock_o3  = get_fablock(tensors, "model.diffusion_model.output_blocks.3.1")
+    fablock_o4  = get_fablock(tensors, "model.diffusion_model.output_blocks.4.1")
+    fablock_o5  = get_fablock(tensors, "model.diffusion_model.output_blocks.5.1")
+    fablock_o6  = get_fablock(tensors, "model.diffusion_model.output_blocks.6.1")
+    fablock_o7  = get_fablock(tensors, "model.diffusion_model.output_blocks.7.1")
+    fablock_o8  = get_fablock(tensors, "model.diffusion_model.output_blocks.8.1")
+    fablock_o9  = get_fablock(tensors, "model.diffusion_model.output_blocks.9.1")
+    fablock_o10 = get_fablock(tensors, "model.diffusion_model.output_blocks.10.1")
+    fablock_o11 = get_fablock(tensors, "model.diffusion_model.output_blocks.11.1")
     Fmodel(
         time_w1, time_b1, time_w2, time_b2,
         fconv_i0,
@@ -840,6 +953,22 @@ function get_fmodel(tensors)
         frcblock_o9,  
         frcblock_o10, 
         frcblock_o11, 
+        fablock_i1,
+        fablock_i2,
+        fablock_i4,
+        fablock_i5,
+        fablock_i7,
+        fablock_i8,
+        fablock_m1,
+        fablock_o3,
+        fablock_o4,
+        fablock_o5,
+        fablock_o6,
+        fablock_o7,
+        fablock_o8,
+        fablock_o9,
+        fablock_o10,
+        fablock_o11,
     )
 end
 
