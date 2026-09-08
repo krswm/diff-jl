@@ -223,6 +223,36 @@ end
 generate_ppm_image(x, ARGS[1])
 =#
 
+function calc_frblock(x, f, frblock)
+    y = x  # [x, y, o, n]
+    x = groupnorm(x, frblock.g1, frblock.t1)  # [x, y, o, n]
+    x = silu.(x)  # [x, y, o, n]
+    x = conv(x, frblock.wc1, stride=1, pad=1, flipped=true) .+ frblock.bc1
+    f = silu.(f)  # [f₃]
+    f = frblock.w * f .+ frblock.b  # [o]
+    f = insertdims(f, dims=(1, 2, 4))  # [x, y, o, n]
+    x .+= f  # [x, y, o, n]
+    x = groupnorm(x, frblock.g2, frblock.t2)  # [x, y, o, n]
+    x = silu.(x)  # [x, y, o, n]
+    x = conv(x, frblock.wc2, stride=1, pad=1, flipped=true) .+ frblock.bc2
+    x + y
+end
+
+function calc_frcblock(x, f, frcblock)
+    y = x  # [x, y, o, n]
+    x = groupnorm(x, frcblock.g1, frcblock.t1)  # [x, y, o, n]
+    x = silu.(x)  # [x, y, o, n]
+    x = conv(x, frcblock.wc1, stride=1, pad=1, flipped=true) .+ frcblock.bc1
+    f = silu.(f)  # [f₃]
+    f = frcblock.w * f .+ frcblock.b  # [o]
+    f = insertdims(f, dims=(1, 2, 4))  # [x, y, o, n]
+    x .+= f  # [x, y, o, n]
+    x = groupnorm(x, frcblock.g2, frcblock.t2)  # [x, y, o, n]
+    x = silu.(x)  # [x, y, o, n]
+    x = conv(x, frcblock.wc2, stride=1, pad=1, flipped=true) .+ frcblock.bc2
+    x + (conv(y, frcblock.wc3, stride=1, pad=0, flipped=true) .+ frcblock.bc3)
+end
+
 function denoise(x, c, t, prev_t, fmodel)
     println("==== t = $t ====")
 
@@ -238,6 +268,8 @@ function denoise(x, c, t, prev_t, fmodel)
     print("0.0 ")
     @time x = conv(x, fmodel.fconv_i0.wc, stride=1, pad=1, flipped=true) .+ fmodel.fconv_i0.bc
     s0 = x
+    print("1.0 ")
+    @time x = calc_frblock(x, f, fmodel.frblock_i1)
     x |> tshow
 end
 

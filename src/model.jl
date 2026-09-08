@@ -668,6 +668,76 @@ function get_fconv(tensors, prefix)
     Fconv(wc, bc)
 end
 
+# Diffusion residual block
+struct Frblock
+    g1::Vector{Float32}
+    t1::Vector{Float32}
+    wc1::Array{Float32, 4}
+    bc1::Array{Float32, 4}
+    w::Matrix{Float32}
+    b::Vector{Float32}
+    g2::Vector{Float32}
+    t2::Vector{Float32}
+    wc2::Array{Float32, 4}
+    bc2::Array{Float32, 4}
+end
+
+# Diffusion residual block w/ additional convolution
+struct Frcblock
+    g1::Vector{Float32}
+    t1::Vector{Float32}
+    wc1::Array{Float32, 4}
+    bc1::Array{Float32, 4}
+    w::Matrix{Float32}
+    b::Vector{Float32}
+    g2::Vector{Float32}
+    t2::Vector{Float32}
+    wc2::Array{Float32, 4}
+    bc2::Array{Float32, 4}
+    wc3::Array{Float32, 4}
+    bc3::Array{Float32, 4}
+end
+
+function get_frblock(tensors, prefix)
+    g1  = tensors["$prefix.in_layers.0.weight"]
+    t1  = tensors["$prefix.in_layers.0.bias"]
+    wc1 = tensors["$prefix.in_layers.2.weight"]  # [o, i, y, x]
+    wc1 = permutedims(wc1, (4, 3, 2, 1))  # [x, y, i, o]
+    bc1 = tensors["$prefix.in_layers.2.bias"]
+    bc1 = insertdims(bc1, dims=(1, 2, 4))  # [x, y, i, o]
+    w   = tensors["$prefix.emb_layers.1.weight"]
+    b   = tensors["$prefix.emb_layers.1.bias"]
+    g2  = tensors["$prefix.out_layers.0.weight"]
+    t2  = tensors["$prefix.out_layers.0.bias"]
+    wc2 = tensors["$prefix.out_layers.3.weight"]  # [o, i, y, x]
+    wc2 = permutedims(wc2, (4, 3, 2, 1))  # [x, y, i, o]
+    bc2 = tensors["$prefix.out_layers.3.bias"]  # [x, y, o, n]
+    bc2 = insertdims(bc2, dims=(1, 2, 4))  # [x, y, i, o]
+    Frblock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2)
+end
+
+function get_frcblock(tensors, prefix)
+    g1  = tensors["$prefix.in_layers.0.weight"]
+    t1  = tensors["$prefix.in_layers.0.bias"]
+    wc1 = tensors["$prefix.in_layers.2.weight"]  # [o, i, y, x]
+    wc1 = permutedims(wc1, (4, 3, 2, 1))  # [x, y, i, o]
+    bc1 = tensors["$prefix.in_layers.2.bias"]
+    bc1 = insertdims(bc1, dims=(1, 2, 4))  # [x, y, i, o]
+    w   = tensors["$prefix.emb_layers.1.weight"]
+    b   = tensors["$prefix.emb_layers.1.bias"]
+    g2  = tensors["$prefix.out_layers.0.weight"]
+    t2  = tensors["$prefix.out_layers.0.bias"]
+    wc2 = tensors["$prefix.out_layers.3.weight"]  # [o, i, y, x]
+    wc2 = permutedims(wc2, (4, 3, 2, 1))  # [x, y, i, o]
+    bc2 = tensors["$prefix.out_layers.3.bias"]  # [x, y, o, n]
+    bc2 = insertdims(bc2, dims=(1, 2, 4))  # [x, y, i, o]
+    wc3 = tensors["$prefix.skip_connection.weight"]  # [o, i, y, x]
+    wc3 = permutedims(wc2, (4, 3, 2, 1))  # [x, y, i, o]
+    bc3 = tensors["$prefix.skip_connection.bias"]  # [x, y, o, n]
+    bc3 = insertdims(bc3, dims=(1, 2, 4))  # [x, y, i, o]
+    Frcblock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2, wc3, bc3)
+end
+
 # diffusion model
 struct Fmodel
     time_w1::Matrix{Float32}
@@ -681,6 +751,28 @@ struct Fmodel
     fconv_o2::Fconv
     fconv_o5::Fconv
     fconv_o8::Fconv
+    frblock_i1::Frblock
+    frblock_i2::Frblock
+    frblock_i5::Frblock
+    frblock_i8::Frblock
+    frblock_i10::Frblock
+    frblock_i11::Frblock
+    frblock_m0::Frblock
+    frblock_m2::Frblock
+    frcblock_i4::Frcblock
+    frcblock_i7::Frcblock
+    frcblock_o0::Frcblock
+    frcblock_o1::Frcblock
+    frcblock_o2::Frcblock
+    frcblock_o3::Frcblock
+    frcblock_o4::Frcblock
+    frcblock_o5::Frcblock
+    frcblock_o6::Frcblock
+    frcblock_o7::Frcblock
+    frcblock_o8::Frcblock
+    frcblock_o9::Frcblock
+    frcblock_o10::Frcblock
+    frcblock_o11::Frcblock
 end
 
 function get_fmodel(tensors)
@@ -695,6 +787,28 @@ function get_fmodel(tensors)
     fconv_o2 = get_fconv(tensors, "model.diffusion_model.output_blocks.2.1.conv")
     fconv_o5 = get_fconv(tensors, "model.diffusion_model.output_blocks.5.2.conv")
     fconv_o8 = get_fconv(tensors, "model.diffusion_model.output_blocks.8.2.conv")
+    frblock_i1  = get_frblock(tensors, "model.diffusion_model.input_blocks.1.0")
+    frblock_i2  = get_frblock(tensors, "model.diffusion_model.input_blocks.2.0")
+    frblock_i5  = get_frblock(tensors, "model.diffusion_model.input_blocks.5.0")
+    frblock_i8  = get_frblock(tensors, "model.diffusion_model.input_blocks.8.0")
+    frblock_i10 = get_frblock(tensors, "model.diffusion_model.input_blocks.10.0")
+    frblock_i11 = get_frblock(tensors, "model.diffusion_model.input_blocks.11.0")
+    frblock_m0  = get_frblock(tensors, "model.diffusion_model.middle_block.0")
+    frblock_m2  = get_frblock(tensors, "model.diffusion_model.middle_block.2")
+    frcblock_i4  = get_frcblock(tensors, "model.diffusion_model.input_blocks.4.0")
+    frcblock_i7  = get_frcblock(tensors, "model.diffusion_model.input_blocks.7.0")
+    frcblock_o0  = get_frcblock(tensors, "model.diffusion_model.output_blocks.0.0")
+    frcblock_o1  = get_frcblock(tensors, "model.diffusion_model.output_blocks.1.0")
+    frcblock_o2  = get_frcblock(tensors, "model.diffusion_model.output_blocks.2.0")
+    frcblock_o3  = get_frcblock(tensors, "model.diffusion_model.output_blocks.3.0")
+    frcblock_o4  = get_frcblock(tensors, "model.diffusion_model.output_blocks.4.0")
+    frcblock_o5  = get_frcblock(tensors, "model.diffusion_model.output_blocks.5.0")
+    frcblock_o6  = get_frcblock(tensors, "model.diffusion_model.output_blocks.6.0")
+    frcblock_o7  = get_frcblock(tensors, "model.diffusion_model.output_blocks.7.0")
+    frcblock_o8  = get_frcblock(tensors, "model.diffusion_model.output_blocks.8.0")
+    frcblock_o9  = get_frcblock(tensors, "model.diffusion_model.output_blocks.9.0")
+    frcblock_o10 = get_frcblock(tensors, "model.diffusion_model.output_blocks.10.0")
+    frcblock_o11 = get_frcblock(tensors, "model.diffusion_model.output_blocks.11.0")
     Fmodel(
         time_w1, time_b1, time_w2, time_b2,
         fconv_i0,
@@ -704,6 +818,28 @@ function get_fmodel(tensors)
         fconv_o2,
         fconv_o5,
         fconv_o8,
+        frblock_i1,  
+        frblock_i2,  
+        frblock_i5,  
+        frblock_i8,  
+        frblock_i10, 
+        frblock_i11, 
+        frblock_m0,  
+        frblock_m2,  
+        frcblock_i4,  
+        frcblock_i7,  
+        frcblock_o0,  
+        frcblock_o1,  
+        frcblock_o2,  
+        frcblock_o3,  
+        frcblock_o4,  
+        frcblock_o5,  
+        frcblock_o6,  
+        frcblock_o7,  
+        frcblock_o8,  
+        frcblock_o9,  
+        frcblock_o10, 
+        frcblock_o11, 
     )
 end
 
