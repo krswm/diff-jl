@@ -16,7 +16,7 @@
 
 module Model
 
-export Layer, Model, get_dmodel, get_model
+export Layer, Model, get_dmodel, get_fmodel, get_model
 
 using JSON
 
@@ -651,6 +651,59 @@ function get_dmodel(tensors)
 
         dgn,
         dconv_out,
+    )
+end
+
+# Diffusion convolution
+struct Fconv
+    wc::Array{Float32, 4}  # [x, y, i, o]
+    bc::Array{Float32, 4}  # [x, y, o, n]
+end
+
+function get_fconv(tensors, prefix)
+    wc = tensors["$prefix.weight"]  # [o, i, y, x]
+    wc = permutedims(wc, (4, 3, 2, 1))  # [x, y, i, o]
+    bc = tensors["$prefix.bias"]  # [o]
+    bc = insertdims(bc, dims=(1, 2, 4))  # [x, y, o, n]
+    Fconv(wc, bc)
+end
+
+# diffusion model
+struct Fmodel
+    time_w1::Matrix{Float32}
+    time_b1::Vector{Float32}
+    time_w2::Matrix{Float32}
+    time_b2::Vector{Float32}
+    fconv_i0::Fconv
+    fconv_i3::Fconv
+    fconv_i6::Fconv
+    fconv_i9::Fconv
+    fconv_o2::Fconv
+    fconv_o5::Fconv
+    fconv_o8::Fconv
+end
+
+function get_fmodel(tensors)
+    time_w1 = tensors["model.diffusion_model.time_embed.0.weight"]  # [f₂, f₁]
+    time_b1 = tensors["model.diffusion_model.time_embed.0.bias"]  # [f₂]
+    time_w2 = tensors["model.diffusion_model.time_embed.2.weight"]  # [f₃, f₂]
+    time_b2 = tensors["model.diffusion_model.time_embed.2.bias"]  # [f₃]
+    fconv_i0 = get_fconv(tensors, "model.diffusion_model.input_blocks.0.0")
+    fconv_i3 = get_fconv(tensors, "model.diffusion_model.input_blocks.3.0.op")
+    fconv_i6 = get_fconv(tensors, "model.diffusion_model.input_blocks.6.0.op")
+    fconv_i9 = get_fconv(tensors, "model.diffusion_model.input_blocks.9.0.op")
+    fconv_o2 = get_fconv(tensors, "model.diffusion_model.output_blocks.2.1.conv")
+    fconv_o5 = get_fconv(tensors, "model.diffusion_model.output_blocks.5.2.conv")
+    fconv_o8 = get_fconv(tensors, "model.diffusion_model.output_blocks.8.2.conv")
+    Fmodel(
+        time_w1, time_b1, time_w2, time_b2,
+        fconv_i0,
+        fconv_i3,
+        fconv_i6,
+        fconv_i9,
+        fconv_o2,
+        fconv_o5,
+        fconv_o8,
     )
 end
 

@@ -196,6 +196,7 @@ function decode(x, dmodel)
     x
 end
 
+#=
 decref = load_safetensors("../../../Downloads/decref.safetensors")
 dmodel = begin
     tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
@@ -220,3 +221,37 @@ function generate_ppm_image(x, filename)
 end
 
 generate_ppm_image(x, ARGS[1])
+=#
+
+function denoise(x, c, t, prev_t, fmodel)
+    println("==== t = $t ====")
+
+    f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))  # [f₁]
+    f = vcat(cos.(f), sin.(f))  # [f₁]
+
+    f = fmodel.time_w1 * f + fmodel.time_b1  # [f₂]
+    f = silu.(f)  # [f₂]
+    f = fmodel.time_w2 * f + fmodel.time_b2  # [f₃]
+
+    x = cat(x, x, dims = 4)  # [x, y, o, n]
+
+    print("0.0 ")
+    @time x = conv(x, fmodel.fconv_i0.wc, stride=1, pad=1, flipped=true) .+ fmodel.fconv_i0.bc
+    s0 = x
+    x |> tshow
+end
+
+function diffuse(c, fmodel)
+    rand42 = load_safetensors("../../../Downloads/rand42.safetensors")
+    x = permutedims(rand42["l"], (4, 3, 2, 1))  # [x, y, o, n]
+
+    x = denoise(x, c, 900, 800, fmodel)
+end
+
+decref = load_safetensors("../../../Downloads/decref.safetensors")
+fmodel = begin
+    tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
+    get_fmodel(tensors)
+end
+c = permutedims(decref["c"], (3, 2, 1))  # [ctx, idx, n]
+diffuse(c, fmodel)
