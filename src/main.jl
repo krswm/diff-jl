@@ -19,6 +19,7 @@
 println("hey!")
 
 # %%
+using Flux
 using JSON
 using SafeTensors
 using Statistics
@@ -115,7 +116,15 @@ c = cat(positive_prompt_embedding, negative_prompt_embedding, dims = 3)
 ;
 
 # %%
+function tshow(x)
+    println(size(x))
+    show(IOContext(stdout, :limit => true), "text/plain", x)
+    println()
+end
+
+# %%
 function conv2d(wc, bc, latent)
+    #=
     # Kernel size 3x3, padding 1
 
     N, Cin, H, W = size(latent)
@@ -191,6 +200,19 @@ function conv2d(wc, bc, latent)
         ) + bc[o]
         for n = 1:N, o = 1:Cout, y = 1:H, x = 1:W
     )  # [n, o, y, x]
+    =#
+
+    # x [n, o, y, x]
+    # wc [o, i, y, x]
+    # bc [o]
+    latent = permutedims(latent, (4, 3, 2, 1))  # [x, y, i, n]
+    wc = permutedims(wc, (4, 3, 2, 1))  # [ξ, η, i, o]
+    num_ξ, num_η, _, _ = size(wc)
+    @assert num_ξ == num_η
+    kw = num_ξ ÷ 2
+    bc = insertdims(bc, dims=(1, 2, 4))  # [x, y, o, n]
+    latent = conv(latent, wc, stride=1, pad=kw, flipped=true) .+ bc  # [x, y, o, n]
+    permutedims(latent, (4, 3, 2, 1))  # [n, o, y, x]
 end
 
 # %%
@@ -402,6 +424,7 @@ end
 
 # %%
 function conv2d_strided(wc, bc, latent)
+    #=
     # Kernel size 3x3, padding 1
     # stride 2 pixels
 
@@ -473,6 +496,19 @@ function conv2d_strided(wc, bc, latent)
         ) + bc[o]
         for n = 1:N, o = 1:Cout, y = 1:2:H, x = 1:2:W  # <- The only difference from `conv2d` is here!
     )  # [n, o, y, x]
+    =#
+
+    # x [n, o, y, x]
+    # wc [o, i, y, x]
+    # bc [o]
+    latent = permutedims(latent, (4, 3, 2, 1))  # [x, y, i, n]
+    wc = permutedims(wc, (4, 3, 2, 1))  # [ξ, η, i, o]
+    num_ξ, num_η, _, _ = size(wc)
+    @assert num_ξ == num_η
+    kw = num_ξ ÷ 2
+    bc = insertdims(bc, dims=(1, 2, 4))  # [x, y, o, n]
+    latent = conv(latent, wc, stride=2, pad=kw, flipped=true) .+ bc  # [x, y, o, n]
+    permutedims(latent, (4, 3, 2, 1))  # [n, o, y, x]
 end
 
 # %%
@@ -685,6 +721,8 @@ latent_orig = rand42["l"]
 
 start_time = time_ns()
 latent_orig = denoise(latent_orig, c, 900, 800)
+latent_orig |> tshow
+
 latent_orig = denoise(latent_orig, c, 800, 700)
 latent_orig = denoise(latent_orig, c, 700, 600)
 latent_orig = denoise(latent_orig, c, 600, 500)
@@ -696,4 +734,3 @@ latent_orig = denoise(latent_orig, c, 100,   0)
 latent_orig = denoise(latent_orig, c,   0, -100)
 println("time taken: $((time_ns() - start_time) * 1e-9)")
 
-latent_orig
