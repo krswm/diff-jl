@@ -361,9 +361,7 @@ function calc_fablock(x, c, fablock)
     x += z
 
     z = x  # [n][xy, o]
-    tshow(z[1], 91)
     z = layernorm.(z, Ref(fablock.g4), Ref(fablock.t4))  # [n][xy, o]
-    tshow(z[1], 92)
     z = transpose.(z)  # [n][o, xy]
     z = calc_fablock_4.(z, Ref(fablock.w41), Ref(fablock.b41), Ref(fablock.w42), Ref(fablock.b42))  # [n][xy, o]
     z = transpose.(z)
@@ -371,11 +369,8 @@ function calc_fablock(x, c, fablock)
 
     x = stack(x)  # [xy, o, n]
     x = reshape(x, num_x, num_y, num_o, num_n)  # [x, y, o, n]
-    tshow(x, 96)
     x = conv(x, fablock.wc4, stride=1, pad=0, flipped=true) .+ fablock.bc4  # [x, y, o, n]
-    tshow(x, 91)
     y += x
-    tshow(y, 92)
     y
 end
 
@@ -398,6 +393,126 @@ function denoise(x, c, t, prev_t, fmodel)
     @time x = calc_frblock(x, f, fmodel.frblock_i1)
     print("1.1 ")
     @time x = calc_fablock(x, c, fmodel.fablock_i1)
+    s1 = x
+    print("2.0 ")
+    @time x = calc_frblock(x, f, fmodel.frblock_i2)
+    print("2.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_i2)
+    s2 = x
+
+    print("3.0 ")
+    @time x = conv(x, fmodel.fconv_i3.wc, stride=2, pad=1, flipped=true) .+ fmodel.fconv_i3.bc
+    s3 = x
+    print("4.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_i4)
+    print("4.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_i4)
+    s4 = x
+    print("5.0 ")
+    @time x = calc_frblock(x, f, fmodel.frblock_i5)
+    print("5.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_i5)
+    s5 = x
+
+    print("6.0 ")
+    @time x = conv(x, fmodel.fconv_i6.wc, stride=2, pad=1, flipped=true) .+ fmodel.fconv_i6.bc
+    s6 = x
+    print("7.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_i7)
+    print("7.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_i7)
+    s7 = x
+    print("8.0 ")
+    @time x = calc_frblock(x, f, fmodel.frblock_i8)
+    print("8.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_i8)
+    s8 = x
+
+    print("9.0 ")
+    @time x = conv(x, fmodel.fconv_i9.wc, stride=2, pad=1, flipped=true) .+ fmodel.fconv_i9.bc
+    s9 = x
+    print("10.0 ")
+    @time x = calc_frblock(x, f, fmodel.frblock_i10)
+    s10 = x
+    print("11.0 ")
+    @time x = calc_frblock(x, f, fmodel.frblock_i11)
+    s11 = x
+
+    print("m0 ")
+    @time x = calc_frblock(x, f, fmodel.frblock_m0)
+    print("m1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_m1)
+    print("m2 ")
+    @time x = calc_frblock(x, f, fmodel.frblock_m2)
+
+    x = cat(x, s11; dims=3)
+    print("d0.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o0)
+    x = cat(x, s10; dims=3)
+    print("d1.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o1)
+    x = cat(x, s9; dims=3)
+    print("d2.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o2)
+    print("d2.1 ")
+    x = upsample(x)
+    @time x = conv(x, fmodel.fconv_o2.wc, stride=1, pad=1, flipped=true) .+ fmodel.fconv_o2.bc
+
+    x = cat(x, s8; dims=3)
+    print("d3.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o3)
+    print("d3.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o3)
+    x = cat(x, s7; dims=3)
+    print("d4.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o4)
+    print("d4.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o4)
+    x = cat(x, s6; dims=3)
+    print("d5.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o5)
+    print("d5.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o5)
+    print("d5.2 ")
+    x = upsample(x)
+    @time x = conv(x, fmodel.fconv_o5.wc, stride=1, pad=1, flipped=true) .+ fmodel.fconv_o5.bc
+
+    x = cat(x, s5; dims=3)
+    print("d6.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o6)
+    print("d6.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o6)
+    x = cat(x, s4; dims=3)
+    print("d7.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o7)
+    print("d7.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o7)
+    x = cat(x, s3; dims=3)
+    print("d8.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o8)
+    print("d8.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o8)
+    print("d8.2 ")
+    x = upsample(x)
+    @time x = conv(x, fmodel.fconv_o8.wc, stride=1, pad=1, flipped=true) .+ fmodel.fconv_o8.bc
+
+    x = cat(x, s2; dims=3)
+    print("d9.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o9)
+    print("d9.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o9)
+    x = cat(x, s1; dims=3)
+    print("d10.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o10)
+    print("d10.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o10)
+    x = cat(x, s0; dims=3)
+    print("d11.0 ")
+    @time x = calc_frcblock(x, f, fmodel.frcblock_o11)
+    print("d11.1 ")
+    @time x = calc_fablock(x, c, fmodel.fablock_o11)
+    
+    tshow(x, 91)
 end
 
 function diffuse(c, fmodel)

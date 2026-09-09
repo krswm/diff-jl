@@ -732,7 +732,7 @@ function get_frcblock(tensors, prefix)
     bc2 = tensors["$prefix.out_layers.3.bias"]  # [x, y, o, n]
     bc2 = insertdims(bc2, dims=(1, 2, 4))  # [x, y, i, o]
     wc3 = tensors["$prefix.skip_connection.weight"]  # [o, i, y, x]
-    wc3 = permutedims(wc2, (4, 3, 2, 1))  # [x, y, i, o]
+    wc3 = permutedims(wc3, (4, 3, 2, 1))  # [x, y, i, o]
     bc3 = tensors["$prefix.skip_connection.bias"]  # [x, y, o, n]
     bc3 = insertdims(bc3, dims=(1, 2, 4))  # [x, y, i, o]
     Frcblock(g1, t1, wc1, bc1, w, b, g2, t2, wc2, bc2, wc3, bc3)
