@@ -148,8 +148,10 @@ end
 
 function decode(x, dmodel)
     @assert eltype(x) == Float32
+    #=
     @assert size(x) == (1, 4, 64, 64)  # [n, o, y, x]
     x = permutedims(x, (4, 3, 2, 1))  # [x, y, o, n]
+    =#
     @assert eltype(x) == Float32
     @assert size(x) == (64, 64, 4, 1)
     x ./= 0.18215f0
@@ -214,33 +216,6 @@ function decode(x, dmodel)
     
     x
 end
-
-#=
-decref = load_safetensors("../../../Downloads/decref.safetensors")
-dmodel = begin
-    tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
-    get_dmodel(tensors)
-end
-x = decref["l"]
-x = decode(x, dmodel)
-
-x = clamp.(floor.((x .+ 1) * 128), UInt8)  # [x, y, rgb, n]
-
-function generate_ppm_image(x, filename)
-    println(size(x))
-    num_x, num_y, num_rgb, num_n = size(x)
-    @assert num_rgb == 3
-    @assert num_n == 1
-    x = permutedims(x, (4, 3, 1, 2))  # [n, rgb, x, y]
-    x = vec(x)  # [rgbyx]
-    open(filename, "w") do file
-        println(file, "P3", " ", num_x, " ", num_y, " ", 255)
-        writedlm(file, x)
-    end
-end
-
-generate_ppm_image(x, ARGS[1])
-=#
 
 function calc_frblock(x, f, frblock)
     y = x  # [x, y, o, n]
@@ -532,6 +507,9 @@ end
 function diffuse(c, fmodel)
     rand42 = load_safetensors("../../../Downloads/rand42.safetensors")
     x = permutedims(rand42["l"], (4, 3, 2, 1))  # [x, y, o, n]
+    #=
+    x = rand(Float32, 64, 64, 4, 1)
+    =#
 
     x = denoise(x, c, 900,  800, fmodel)
     x = denoise(x, c, 800,  700, fmodel)
@@ -543,8 +521,8 @@ function diffuse(c, fmodel)
     x = denoise(x, c, 200,  100, fmodel)
     x = denoise(x, c, 100,    0, fmodel)
     x = denoise(x, c,   0, -100, fmodel)
-    tshow(x, 91)
     # Expected result!
+    x
 end
 
 decref = load_safetensors("../../../Downloads/decref.safetensors")
@@ -553,4 +531,29 @@ fmodel = begin
     get_fmodel(tensors)
 end
 c = permutedims(decref["c"], (3, 2, 1))  # [ctx, embd, n]
-diffuse(c, fmodel)
+x = diffuse(c, fmodel)
+
+println("==== Decoding latent space -> image (RGB) space ====")
+dmodel = begin
+    tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
+    get_dmodel(tensors)
+end
+x = decode(x, dmodel)
+
+x = clamp.(floor.((x .+ 1) * 128), UInt8)  # [x, y, rgb, n]
+
+function generate_ppm_image(x, filename)
+    println(size(x))
+    num_x, num_y, num_rgb, num_n = size(x)
+    @assert num_rgb == 3
+    @assert num_n == 1
+    x = permutedims(x, (4, 3, 1, 2))  # [n, rgb, x, y]
+    x = vec(x)  # [rgbyx]
+    open(filename, "w") do file
+        println(file, "P3", " ", num_x, " ", num_y, " ", 255)
+        writedlm(file, x)
+    end
+end
+
+generate_ppm_image(x, ARGS[1])
+

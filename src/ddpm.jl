@@ -4,8 +4,10 @@ export ddpm_step
 
 using SafeTensors
 
+#=
 # Reference tensors.
 rand42 = load_safetensors("../../../Downloads/rand42.safetensors")
+=#
 
 βs = range(√0.00085f0, √0.0120f0, 1000) .^ 2
 αs = 1 .- βs
@@ -25,6 +27,7 @@ function ddpm_step(curr_t, prev_t, xₜ, ϵ)
     if curr_t > 0
         noise = rand42["n$curr_t"]  # TODO: Use random generator later.
         noise = permutedims(noise, (4, 3, 2, 1))
+        # noise = rand(Float32, 64, 64, 4, 1)
         variance = (1 - prev_α_bar) / (1 - curr_α_bar) * (1 - αₜ)
         result = μₜ + √variance * noise
     else
