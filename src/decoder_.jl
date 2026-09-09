@@ -320,6 +320,20 @@ function cross_attention(x, y, w1q, w1k, w1v, w2, b2, num_H)
     w2 * x .+ b2                              # [Dq₄, Sq]
 end
 
+ugelu(v) = (tanh((v ^ 3 * 0.044715f0 + v) * sqrt(2.0f0 / pi)) + 1.0f0) * v * 0.5f0
+
+function calc_fablock_4(x, w1, b1, w2, b2)
+    b1 = insertdims(b1, dims=2)
+    b2 = insertdims(b2, dims=2)
+    x = w1 * x .+ b1  # [A, B]
+    num_A, num_B = size(x)
+    x = reshape(x, num_A ÷ 2, 2, num_B)
+    x, g = eachslice(x, dims=2)
+    x = x .* gelu.(g)
+    x = w2 * x .+ b2  # [A, B]
+end
+
+
 function calc_fablock(x, c, fablock)
     # x [x, y, o, n]
     num_x, num_y, num_o, num_n = size(x)
@@ -337,14 +351,32 @@ function calc_fablock(x, c, fablock)
     z = layernorm.(x, Ref(fablock.g2), Ref(fablock.t2))  # [n][xy, o]
     z = self_attention.(z, Ref(fablock.w21), Ref(fablock.b21), Ref(fablock.w22), Ref(fablock.b22), 8)  # [n][xy, o]
     x += z  # [n][xy, o]
+
     z = x  # [n][xy, o]
     z = layernorm.(x, Ref(fablock.g3), Ref(fablock.t3))  # [n][xy, o]
-
     z = transpose.(z)  # [n][o, xy]
     c = eachslice(c, dims=3)  # [n][Dkv, Skv]
     z = cross_attention.(z, c, Ref(fablock.w31q), Ref(fablock.w31k), Ref(fablock.w31v), Ref(fablock.w32), Ref(fablock.b32), 8)  # [n, o, xy]
     z = transpose.(z)  # [n][xy, o]
     x += z
+
+    z = x  # [n][xy, o]
+    tshow(z[1], 91)
+    z = layernorm.(z, Ref(fablock.g4), Ref(fablock.t4))  # [n][xy, o]
+    tshow(z[1], 92)
+    z = transpose.(z)  # [n][o, xy]
+    z = calc_fablock_4.(z, Ref(fablock.w41), Ref(fablock.b41), Ref(fablock.w42), Ref(fablock.b42))  # [n][xy, o]
+    z = transpose.(z)
+    x += z  # [n][xy, o]
+
+    x = stack(x)  # [xy, o, n]
+    x = reshape(x, num_x, num_y, num_o, num_n)  # [x, y, o, n]
+    tshow(x, 96)
+    x = conv(x, fablock.wc4, stride=1, pad=0, flipped=true) .+ fablock.bc4  # [x, y, o, n]
+    tshow(x, 91)
+    y += x
+    tshow(y, 92)
+    y
 end
 
 function denoise(x, c, t, prev_t, fmodel)
