@@ -9,10 +9,12 @@ using SafeTensors
 include("model.jl")
 using .Model
 
-function tshow(x)
+function tshow(x, color)
+    print("\x1b[$(color)m")
     println(size(x))
     show(IOContext(stdout, :limit => true), "text/plain", x)
     println()
+    print("\x1b[39m")
 end
 
 function norm_inner(x, g, t, x_mean, x_var)
@@ -52,7 +54,7 @@ function layernorm(x, g, t)
 
     x_mean = mean(x, dims=(1, 2, 3))  # [x, y, o, n] (x=1, y=1, o=1 only)
     x_mean = reshape(x_mean, (num_n,))  # [o, n]
-    x_var = var(x, dims=(1, 2, 3))  # [x, y, o, n] (x=1, y=1, o=1 only)
+    x_var = var(x, dims=(1, 2, 3), corrected=false)  # [x, y, o, n] (x=1, y=1, o=1 only)
     x_var = reshape(x_var, (num_n,))  # [o, n]
     x = eachslice(x, dims=(3, 4))  # [o, n][x, y]
     x = [norm_inner(x[o, n], g[o], t[o], x_mean[n], x_var[n]) for o=1:num_o, n=1:num_n]  # [o, n][x, y]
@@ -281,23 +283,41 @@ function layernorm(x, g, t)
     g .* (x .- x_mean) ./ .√(x_var .+ 1f-5) .+ t  # [xy, o]
 end
 
-function cross_attention(x, c, w1q, w1k, w1v, w2, b2)
-    # x [xy, o]
-    # c [embd, ctx]
-    # w1q [o', o]
-    # w1k [o', embd]
-    # w1v [o', embd]
-    # w2 [o, o]
-    # b2 [o]
-    
+function cross_attention(x, y, w1q, w1k, w1v, w2, b2, num_H)
+    # x   [Dq₁, Sq ]
+    # y   [Dkv, Skv]
+    # w1q [Dq₂, Dq₁]
+    # w1k [Dq₂, Dkv]
+    # w1v [Dq₃, Dkv]
+    # w2  [Dq₄, Dq]
+    # b2  [Dq₄]
+    b2 = insertdims(b2, dims=2)  # [Dq₄, 1]
+    num_Dq, num_Sq = size(x)
+    num_Dkv, num_Skv = size(y)
+    num_I = num_Dq ÷ num_H
 
-    x |> size |> println
-    c |> size |> println
-    w1q |> size |> println
-    w1k |> size |> println
-    w1v |> size |> println
-    w2 |> size |> println
-    b2 |> size |> println
+    q = w1q * x  # [Dq₂, Sq ]
+    k = w1k * y  # [Dq₂, Skv]
+    v = w1v * y  # [Dq₃, Skv]
+
+    q = reshape(q, num_I, num_H, num_Sq)   # [I, H, Sq ]
+    k = reshape(k, num_I, num_H, num_Skv)  # [I, H, Skv]
+    v = reshape(v, num_I, num_H, num_Skv)  # [I, H, Skv]
+
+    q = permutedims(q, (1, 3, 2))  # [I, Sq,  H]
+    k = permutedims(k, (1, 3, 2))  # [I, Skv, H]
+    v = permutedims(v, (1, 3, 2))  # [I, Skv, H]
+
+    q = eachslice(q, dims=3)  # [H][I, Sq ]
+    k = eachslice(k, dims=3)  # [H][I, Skv]
+    v = eachslice(v, dims=3)  # [H][I, Skv]
+
+    d = √convert(eltype(x), num_I)
+    x = @. v * softmax(transpose(k) * q / d)  # @. [H][I, Skv] * [H][Skv, Sq] -> [H][I, Sq]
+    x = stack(x)                              # [I, Sq, H]
+    x = permutedims(x, (1, 3, 2))             # [I, H, Sq]
+    x = reshape(x, num_Dq, num_Sq)            # [Dq, Sq]
+    w2 * x .+ b2                              # [Dq₄, Sq]
 end
 
 function calc_fablock(x, c, fablock)
@@ -319,15 +339,12 @@ function calc_fablock(x, c, fablock)
     x += z  # [n][xy, o]
     z = x  # [n][xy, o]
     z = layernorm.(x, Ref(fablock.g3), Ref(fablock.t3))  # [n][xy, o]
-    c = eachslice(c, dims=3)  # [n][xy, o]
-    z = cross_attention.(z, c, Ref(fablock.w31q), Ref(fablock.w31k), Ref(fablock.w31v), Ref(fablock.w32), Ref(fablock.b32))  # [n][xy, o]
-    z[1] |> tshow
-    exit()
-    
-    x = stack(x)  # [xy, o, n]
-    x = reshape(x, (num_x, num_y, num_o, num_n))  # [x, y, o, n]
-    y += x
-    y
+
+    z = transpose.(z)  # [n][o, xy]
+    c = eachslice(c, dims=3)  # [n][Dkv, Skv]
+    z = cross_attention.(z, c, Ref(fablock.w31q), Ref(fablock.w31k), Ref(fablock.w31v), Ref(fablock.w32), Ref(fablock.b32), 8)  # [n, o, xy]
+    z = transpose.(z)  # [n][xy, o]
+    x += z
 end
 
 function denoise(x, c, t, prev_t, fmodel)
