@@ -2,7 +2,7 @@ using DelimitedFiles
 using SparseArrays
 using Statistics
 
-using Flux  # For `conv`.
+using NNlib  # Only for `conv`.
 using JSON
 using SafeTensors
 
