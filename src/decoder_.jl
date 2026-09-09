@@ -6,11 +6,6 @@ using NNlib  # Only for `conv`.
 using JSON
 using SafeTensors
 
-include("model.jl")
-using .Model
-include("ddpm.jl")
-using .DDPM
-
 function tshow(x, color)
     print("\x1b[$(color)m")
     println(size(x))
@@ -527,23 +522,6 @@ function diffuse(c, fmodel)
     x
 end
 
-decref = load_safetensors("../../../Downloads/decref.safetensors")
-fmodel = begin
-    tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
-    get_fmodel(tensors)
-end
-c = permutedims(decref["c"], (3, 2, 1))  # [ctx, embd, n]
-x = diffuse(c, fmodel)
-
-println("==== Decoding latent space -> image (RGB) space ====")
-dmodel = begin
-    tensors = load_safetensors("../../../Downloads/sd/v1-5/model.safetensors")
-    get_dmodel(tensors)
-end
-x = decode(x, dmodel)
-
-x = clamp.(floor.((x .+ 1) * 128), UInt8)  # [x, y, rgb, n]
-
 function generate_ppm_image(x, filename)
     println(size(x))
     num_x, num_y, num_rgb, num_n = size(x)
@@ -557,5 +535,23 @@ function generate_ppm_image(x, filename)
     end
 end
 
-generate_ppm_image(x, ARGS[1])
+function generate_image(c, model_path, output_path)
+    fmodel = begin
+        tensors = load_safetensors("$model_path/model.safetensors")
+        get_fmodel(tensors)
+    end
+
+    x = diffuse(c, fmodel)
+
+    println("==== Decoding latent space -> image (RGB) space ====")
+    dmodel = begin
+        tensors = load_safetensors("$model_path/model.safetensors")
+        get_dmodel(tensors)
+    end
+    x = decode(x, dmodel)
+
+    x = clamp.(floor.((x .+ 1) * 128), UInt8)  # [x, y, rgb, n]
+
+    generate_ppm_image(x, output_path)
+end
 
