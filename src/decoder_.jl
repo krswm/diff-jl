@@ -505,11 +505,13 @@ function denoise(x, c, t, prev_t, fmodel)
 end
 
 function diffuse(c, fmodel)
+    #=
     rand42 = load_safetensors("../../../Downloads/rand42.safetensors")
     x = permutedims(rand42["l"], (4, 3, 2, 1))  # [x, y, o, n]
-    #=
-    x = rand(Float32, 64, 64, 4, 1)
     =#
+    x = randn(Float32, 64, 64, 4, 1)  # [x, y, o, n]
+    # A different image of a cat with a hat generated when I change this to randn!
+    # It's a good sign.
 
     x = denoise(x, c, 900,  800, fmodel)
     x = denoise(x, c, 800,  700, fmodel)
