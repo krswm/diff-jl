@@ -24,6 +24,7 @@ function ddpm_step(curr_t, prev_t, xₜ, ϵ)
     μₜ = √prev_α_bar * (1 - αₜ) / (1 - curr_α_bar) * x₀ + √αₜ * (1 - prev_α_bar) / (1 - curr_α_bar) * xₜ
     if curr_t > 0
         noise = rand42["n$curr_t"]  # TODO: Use random generator later.
+        noise = permutedims(noise, (4, 3, 2, 1))
         variance = (1 - prev_α_bar) / (1 - curr_α_bar) * (1 - αₜ)
         result = μₜ + √variance * noise
     else

@@ -870,6 +870,10 @@ struct Fmodel
     fablock_o9::Fablock
     fablock_o10::Fablock
     fablock_o11::Fablock
+    g_final::Vector{Float32}
+    t_final::Vector{Float32}
+    wc_final::Array{Float32, 4}
+    bc_final::Array{Float32, 4}
 end
 
 function get_fmodel(tensors)
@@ -922,6 +926,12 @@ function get_fmodel(tensors)
     fablock_o9  = get_fablock(tensors, "model.diffusion_model.output_blocks.9.1")
     fablock_o10 = get_fablock(tensors, "model.diffusion_model.output_blocks.10.1")
     fablock_o11 = get_fablock(tensors, "model.diffusion_model.output_blocks.11.1")
+    g_final  = tensors["model.diffusion_model.out.0.weight"]
+    t_final  = tensors["model.diffusion_model.out.0.bias"]
+    wc_final = tensors["model.diffusion_model.out.2.weight"]
+    wc_final = permutedims(wc_final, (4, 3, 2, 1))
+    bc_final = tensors["model.diffusion_model.out.2.bias"]
+    bc_final = insertdims(bc_final, dims=(1, 2, 4))
     Fmodel(
         time_w1, time_b1, time_w2, time_b2,
         fconv_i0,
@@ -969,6 +979,10 @@ function get_fmodel(tensors)
         fablock_o9,
         fablock_o10,
         fablock_o11,
+        g_final,
+        t_final,
+        wc_final,
+        bc_final,
     )
 end
 

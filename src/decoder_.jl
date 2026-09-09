@@ -8,6 +8,8 @@ using SafeTensors
 
 include("model.jl")
 using .Model
+include("ddpm.jl")
+using .DDPM
 
 function tshow(x, color)
     print("\x1b[$(color)m")
@@ -377,6 +379,8 @@ end
 function denoise(x, c, t, prev_t, fmodel)
     println("==== t = $t ====")
 
+    y = x
+
     f = t .* 10000 .^ (0.0f0:(-1.0f0/160):(-159.0f0/160))  # [f₁]
     f = vcat(cos.(f), sin.(f))  # [f₁]
 
@@ -511,15 +515,36 @@ function denoise(x, c, t, prev_t, fmodel)
     @time x = calc_frcblock(x, f, fmodel.frcblock_o11)
     print("d11.1 ")
     @time x = calc_fablock(x, c, fmodel.fablock_o11)
-    
-    tshow(x, 91)
+
+    x = groupnorm(x, fmodel.g_final, fmodel.t_final)
+    x = silu.(x)
+    x = conv(x, fmodel.wc_final, stride=1, pad=1, flipped=true) .+ fmodel.bc_final  # [x, y, o, n]
+    x_positive, x_negative = eachslice(x; dims=4)  # [x, y, o], [x, y, o]
+    config_scale = 8
+    x = config_scale .* (x_positive - x_negative) .+ x_negative  # [x, y, o]
+    x = insertdims(x, dims=4)  # [x, y, o, 1]
+    # y [x, y, o, 1]
+    x = ddpm_step(t, prev_t, y, x)  # [x, y, o, 1]
+
+    x    
 end
 
 function diffuse(c, fmodel)
     rand42 = load_safetensors("../../../Downloads/rand42.safetensors")
     x = permutedims(rand42["l"], (4, 3, 2, 1))  # [x, y, o, n]
 
-    x = denoise(x, c, 900, 800, fmodel)
+    x = denoise(x, c, 900,  800, fmodel)
+    x = denoise(x, c, 800,  700, fmodel)
+    x = denoise(x, c, 700,  600, fmodel)
+    x = denoise(x, c, 600,  500, fmodel)
+    x = denoise(x, c, 500,  400, fmodel)
+    x = denoise(x, c, 400,  300, fmodel)
+    x = denoise(x, c, 300,  200, fmodel)
+    x = denoise(x, c, 200,  100, fmodel)
+    x = denoise(x, c, 100,    0, fmodel)
+    x = denoise(x, c,   0, -100, fmodel)
+    tshow(x, 91)
+    # Expected result!
 end
 
 decref = load_safetensors("../../../Downloads/decref.safetensors")
