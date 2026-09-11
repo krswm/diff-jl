@@ -301,7 +301,7 @@ function calc_fablock_4(x, w1, b1, w2, b2)
     num_A, num_B = size(x)
     x = reshape(x, num_A ÷ 2, 2, num_B)
     x, g = eachslice(x, dims=2)
-    x = x .* gelu.(g)
+    x = x .* ugelu.(g)
     x = w2 * x .+ b2  # [A, B]
 end
 
