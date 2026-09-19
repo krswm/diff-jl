@@ -10,7 +10,7 @@
 # Let me cheat! --- That means, using an external NN library only for 2D convolutoion calculation.
 #
 # Flux.jl!
-using Flux
+# using Flux
 
 using LinearAlgebra
 using SparseArrays

@@ -2,7 +2,7 @@ using DelimitedFiles
 using SparseArrays
 using Statistics
 
-using NNlib  # Only for `conv`.
+using NNlib: conv
 using JSON
 using SafeTensors
 
@@ -80,6 +80,24 @@ function calc_drcblock(x, drcblock)
     x = silu.(x)  # [x, y, o, n]
     x = conv(x, drcblock.wc2, stride=1, pad=1, flipped=true) .+ drcblock.bc2
     x + (conv(y, drcblock.wc3, stride=1, pad=0, flipped=true) .+ drcblock.bc3)
+end
+
+function softmax(x; dims)
+    # Numerically stable softmax
+
+    #                     exp(xᵢ)        exp(xᵢ) exp(-xₘₐₓ)        exp(xᵢ - xₘₐₓ) 
+    # [softmax(x)]ᵢ ≡ ------------ = ----------------------- = -------------------
+    #                  ∑ⱼ exp(xⱼ)     ∑ⱼ exp(xⱼ) exp(-xₘₐₓ)     ∑ⱼ exp(xⱼ - xₘₐₓ) 
+    #
+    #                                                           ↑ this algorithm
+    #
+    # The number inside `exp` is guaranteed to be ≤0 thus stable.
+    
+    # x [a, b]
+
+    numerator = exp.(x .- maximum(x, dims=dims))  # [a, b]
+    denominator = sum(numerator, dims=dims)  # [a, b]
+    numerator ./ denominator  # [a, b]
 end
 
 function self_attention(x, w1, b1, w2, b2, num_h)
@@ -285,11 +303,11 @@ function cross_attention(x, y, w1q, w1k, w1v, w2, b2, num_H)
     v = eachslice(v, dims=3)  # [H][I, Skv]
 
     d = √convert(eltype(x), num_I)
-    x = @. v * softmax(transpose(k) * q / d)  # @. [H][I, Skv] * [H][Skv, Sq] -> [H][I, Sq]
-    x = stack(x)                              # [I, Sq, H]
-    x = permutedims(x, (1, 3, 2))             # [I, H, Sq]
-    x = reshape(x, num_Dq, num_Sq)            # [Dq, Sq]
-    w2 * x .+ b2                              # [Dq₄, Sq]
+    x = @. v * softmax(transpose(k) * q / d, dims=1)  # @. [H][I, Skv] * [H][Skv, Sq] -> [H][I, Sq]
+    x = stack(x)                                      # [I, Sq, H]
+    x = permutedims(x, (1, 3, 2))                     # [I, H, Sq]
+    x = reshape(x, num_Dq, num_Sq)                    # [Dq, Sq]
+    w2 * x .+ b2                                      # [Dq₄, Sq]
 end
 
 ugelu(v) = (tanh((v ^ 3 * 0.044715f0 + v) * sqrt(2.0f0 / pi)) + 1.0f0) * v * 0.5f0
