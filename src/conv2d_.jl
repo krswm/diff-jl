@@ -13,99 +13,96 @@ function tshow(x)
     println()
 end
 
+function my_conv(I, F)
+    num_ξ, num_η, num_i, num_o = size(F)
+    num_x, num_y, _, num_n = size(I)
+    num_z = num_x * num_y
+    num_p = num_ξ * num_η * num_i
+
+    @assert num_ξ == num_η
+    @assert num_ξ % 2 == 1
+    pad = num_ξ ÷ 2
+
+    # II: My own `im2col` clone
+    II = [
+        begin
+            xx = x + ξ - pad - 1
+            yy = y + η - pad - 1
+            value = if 1 ≤ xx ≤ num_x && 1 ≤ yy ≤ num_y
+                I[xx, yy, i, n]
+            else
+                zero(eltype(I))
+            end
+        end for x = 1:num_x, y = 1:num_y, ξ = 1:num_ξ, η = 1:num_η, i = 1:num_i, n = 1:num_n
+    ]  # [x, y, ξ, η, i, n]
+    II = reshape(II, num_z, num_p, num_n)  # [z, p, n]
+    II = eachslice(II, dims=3)  # [n][z, p]
+
+    FF = reshape(F, num_p, num_o)  # [p, o]
+
+    OO = II .* Ref(FF)  # [n][z, o]
+    OO = stack(OO)  # [z, o, n]
+    OO = reshape(OO, num_x, num_y, num_o, num_n)  # [x, y, o, n]
+
+    OO
+end
+
+num_ξ = 3
+num_η = 3
+num_x = 64
+num_y = 64
+num_i = 320
+num_o = 320
+num_n = 2
+stride = 1
+pad = num_ξ ÷ 2
+
 # Convolution kernel
-F = [
-    11.0 14.0 17.0
-    12.0 15.0 18.0
-    13.0 16.0 19.0;;;
-
-    21.0 24.0 27.0
-    22.0 25.0 28.0
-    23.0 26.0 29.0;;;;
-
-    31.0 34.0 37.0
-    32.0 35.0 38.0
-    33.0 36.0 39.0;;;
-
-    41.0 44.0 47.0
-    42.0 45.0 48.0
-    43.0 46.0 49.0;;;;
-]  # [ξ, η, i, o]
-
-F |> tshow
-num_ξ, num_η, num_i, num_o = size(F)
+# F = [
+#     11.0 14.0 17.0
+#     12.0 15.0 18.0
+#     13.0 16.0 19.0;;;
+# 
+#     21.0 24.0 27.0
+#     22.0 25.0 28.0
+#     23.0 26.0 29.0;;;;
+# 
+#     31.0 34.0 37.0
+#     32.0 35.0 38.0
+#     33.0 36.0 39.0;;;
+# 
+#     41.0 44.0 47.0
+#     42.0 45.0 48.0
+#     43.0 46.0 49.0;;;;
+# ]  # [ξ, η, i, o]
 
 # Convolution input
-I = [
-    110.0 140.0 170.0
-    120.0 150.0 180.0
-    130.0 160.0 190.0;;;
+# I = [
+#     110.0 140.0 170.0
+#     120.0 150.0 180.0
+#     130.0 160.0 190.0;;;
+# 
+#     210.0 240.0 270.0
+#     220.0 250.0 280.0
+#     230.0 260.0 290.0;;;;
+# 
+#     310.0 340.0 370.0
+#     320.0 350.0 380.0
+#     330.0 360.0 390.0;;;
+# 
+#     410.0 440.0 470.0
+#     420.0 450.0 480.0
+#     430.0 460.0 490.0;;;;
+# ]  # [x, y, i, n]
 
-    210.0 240.0 270.0
-    220.0 250.0 280.0
-    230.0 260.0 290.0;;;;
-
-    310.0 340.0 370.0
-    320.0 350.0 380.0
-    330.0 360.0 390.0;;;
-
-    410.0 440.0 470.0
-    420.0 450.0 480.0
-    430.0 460.0 490.0;;;;
-]  # [x, y, i, n]
-
-num_x, num_y, _, num_n = size(I)
-
-I |> tshow
-
-O_ = conv(I, F, stride = 1, pad = 1, flipped = true)
-O_ |> tshow
-
-num_p = num_ξ * num_η * num_i
-
-FF = reshape(F, num_p, num_o)
-
-FF |> tshow
-
-num_q = num_x * num_y * num_n
-
-# My own `im2col` clone
-colmaj = Vector{eltype(I)}()
-for n = 1:num_n
-    for y = 1:num_y
-        for x = 1:num_x
-            for i = 1:num_i
-                for Δy = -1:1  # Corresponds to η
-                    for Δx = -1:1  # Corresponds to ξ
-                        xx = x + Δx
-                        yy = y + Δy
-                        value = if 1 ≤ xx ≤ num_x && 1 ≤ yy ≤ num_y
-                            I[xx, yy, i, n]
-                        else
-                            zero(eltype(I))
-                        end
-                        push!(colmaj, value)
-                    end
-                end
-            end
-        end
-    end
-end
-II = reshape(colmaj, num_p, num_q)
-
-II |> tshow
-
-# FF [p, o]
-# II [p, q]
-# OO [o, q]
-
-OO = transpose(FF) * II
-
-OO |> tshow
-
-O = permutedims(reshape(OO, num_o, num_x, num_y, num_n), (2, 3, 1, 4))  # [x, y, o, n]
-
-O |> tshow
-
+F = rand(num_ξ, num_η, num_i, num_o)
+I = rand(num_x, num_y, num_i, num_n)
+@time O = my_conv(I, F)
+@time O_ = conv(I, F, stride = stride, pad = pad, flipped = true)
 (O == O_) |> println
-# Identical!
+
+F = rand(num_ξ, num_η, num_i, num_o)
+I = rand(num_x, num_y, num_i, num_n)
+@time O = my_conv(I, F)
+@time O_ = conv(I, F, stride = stride, pad = pad, flipped = true)
+(O == O_) |> println
