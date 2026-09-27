@@ -13,11 +13,13 @@ function tshow(x)
     println()
 end
 
-function my_conv(I, F)
+function my_conv(I, F, stride)
     num_ξ, num_η, num_i, num_o = size(F)
     num_x, num_y, _, num_n = size(I)
-    num_z = num_x * num_y
     num_p = num_ξ * num_η * num_i
+    num_X = num_x ÷ stride
+    num_Y = num_y ÷ stride
+    num_Z = num_X * num_Y
 
     @assert num_ξ == num_η
     @assert num_ξ % 2 == 1
@@ -26,23 +28,23 @@ function my_conv(I, F)
     # II: My own `im2col` clone
     II = [
         begin
-            xx = x + ξ - pad - 1
-            yy = y + η - pad - 1
+            xx = (X - 1) * stride + ξ - pad
+            yy = (Y - 1) * stride + η - pad
             value = if 1 ≤ xx ≤ num_x && 1 ≤ yy ≤ num_y
                 I[xx, yy, i, n]
             else
                 zero(eltype(I))
             end
-        end for x = 1:num_x, y = 1:num_y, ξ = 1:num_ξ, η = 1:num_η, i = 1:num_i, n = 1:num_n
-    ]  # [x, y, ξ, η, i, n]
-    II = reshape(II, num_z, num_p, num_n)  # [z, p, n]
-    II = eachslice(II, dims=3)  # [n][z, p]
+        end for X = 1:num_X, Y = 1:num_Y, ξ = 1:num_ξ, η = 1:num_η, i = 1:num_i, n = 1:num_n
+    ]  # [X, Y, ξ, η, i, n]
+    II = reshape(II, num_Z, num_p, num_n)  # [Z, p, n]
+    II = eachslice(II, dims=3)  # [n][Z, p]
 
     FF = reshape(F, num_p, num_o)  # [p, o]
 
-    OO = II .* Ref(FF)  # [n][z, o]
-    OO = stack(OO)  # [z, o, n]
-    OO = reshape(OO, num_x, num_y, num_o, num_n)  # [x, y, o, n]
+    OO = II .* Ref(FF)  # [n][Z, o]
+    OO = stack(OO)  # [Z, o, n]
+    OO = reshape(OO, num_X, num_Y, num_o, num_n)  # [X, Y, o, n]
 
     OO
 end
@@ -54,7 +56,7 @@ num_y = 64
 num_i = 320
 num_o = 320
 num_n = 2
-stride = 1
+stride = 2
 pad = num_ξ ÷ 2
 
 # Convolution kernel
@@ -97,12 +99,12 @@ pad = num_ξ ÷ 2
 
 F = rand(num_ξ, num_η, num_i, num_o)
 I = rand(num_x, num_y, num_i, num_n)
-@time O = my_conv(I, F)
+@time O = my_conv(I, F, stride)
 @time O_ = conv(I, F, stride = stride, pad = pad, flipped = true)
 (O == O_) |> println
 
 F = rand(num_ξ, num_η, num_i, num_o)
 I = rand(num_x, num_y, num_i, num_n)
-@time O = my_conv(I, F)
+@time O = my_conv(I, F, stride)
 @time O_ = conv(I, F, stride = stride, pad = pad, flipped = true)
 (O == O_) |> println
