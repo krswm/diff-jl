@@ -6,7 +6,7 @@
 # - https://numb3r33.github.io/experiments/convolution/math/deeplearning/2023/12/23/im2col.html
 # - https://petewarden.com/2015/04/20/why-gemm-is-at-the-heart-of-deep-learning/
 
-using NNlib: conv
+# using NNlib: conv
 
 function tshow(x)
     show(IOContext(stdout, :limit => true), "text/plain", x)
