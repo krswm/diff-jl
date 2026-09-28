@@ -1,5 +1,4 @@
-# %% [markdown]
-# GPT-2 inference with Julia
+# Stable Diffusion Inference with Julia
 # Copyright (C) 2026  Kurosawa Mutsumi
 #
 # This program is free software: you can redistribute it and/or modify
