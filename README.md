@@ -28,7 +28,7 @@ git clone https://github.com/krswm/diff-jl
 cd diff-jl
 ```
 
-**Download the pre-trained Stable Diffusion model from Hugging Face.**
+**Download [the pre-trained Stable Diffusion model](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) from Hugging Face.**
 
 ```
 mkdir model
@@ -81,7 +81,7 @@ magick output.ppm output.png
 
 I was interested in the diffusion models because of their application in science.
 So, I decided to implement an inference engine of a diffusion model from scratch.
-Although its application is not for science, I chose Stable Diffusion because:
+Although its application is not for science, I targeted Stable Diffusion because:
 
 - The model weight was openly available.
 - I could find many technical information of it online.
@@ -95,5 +95,5 @@ I am looking forward to implement something scientific based on this project in 
 This is a hobby project of mine I started from scratch.
 I enjoyed a lot by working on this project!
 
-I used [the model weight of Stable Diffusion](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) and [a reference implementation (*Stable Diffusion implemented from scratch in PyTorch*)](https://github.com/hkproj/pytorch-stable-diffusion) only for the purpose to observe their behavior as diffusion model architecture.
+I used the model weight of Stable Diffusion and a reference implementation (*Stable Diffusion implemented from scratch in PyTorch*) only for the purpose to observe their behavior as diffusion model architecture.
 Except for that, I did **not** use generative AI for this project at all.
