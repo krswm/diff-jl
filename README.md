@@ -20,7 +20,7 @@ It is assumed that you have Git, cURL, and Julia installed on your machine.
 **Clone this repository.**
 
 ```
-git clone https://github.com/kjlwm/diff-jl
+git clone https://github.com/krswm/diff-jl
 cd diff-jl
 ```
 
