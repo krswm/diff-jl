@@ -54,8 +54,8 @@ The third parameter (`'a cat with a hat'` here) is the *positive* prompt.
 The model tries to make the generated image look *more* like what the positive prompt describes.
 
 The fourth parameter (`''` here, an empty prompt) is the *negative* prompt.
-The model tries to make the generated image look *less* like what the positive prompt describes.
-You can leave it empty (`''`), as this example does.
+The model tries to make the generated image look *less* like what the negative prompt describes.
+You can leave it empty (`''`), as this quickstart does.
 
 It may take some minutes to finish inference.
 
