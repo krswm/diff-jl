@@ -4,6 +4,10 @@ I built an inference engine for Stable Diffusion from scratch in Julia.
 
 Stable Diffusion is a machine learning model that is trained to generate images from text.
 
+![Demo](https://raw.githubusercontent.com/krswm/asset/diff-jl/output.png)
+
+Figure: An image the engine generated with prompt “a cat with a hat”
+
 I also built:
 
 - [An inference engine for Stable Diffusion in Rust](https://github.com/krswm/diff-rs)
