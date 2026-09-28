@@ -50,16 +50,24 @@ end
 
 # %%
 if length(ARGS) ≠ 4
-    println("Stable diffusion inference with Julia")
+    println("Stable Diffusion Inference with Julia")
     print("Usage: ")
     printstyled(
-        "julia --project $PROGRAM_FILE <path to model repository> <output path> <your positive prompt> <your negative prompt>",
+        "julia --project $PROGRAM_FILE <path to model repository> <output path> <positive prompt> <negative prompt>",
         bold = true,
     )
     println()
-    println("You may have to enclose 'your prompt' with quotes.")
+    println("The AI-generated image will be saved to <output path>.")
+    println("The image will be what <positive prompt> describes.")
+    println("The image will not be what <negative prompt> describes.")
+    println("You can leave <negative prompt> empty: ''")
+    println("You may have to enclose 'the prompts' with quotes.")
     exit()
 end
+
+start_time = time_ns()
+
+println("==== CLIP: Obtaining Context Tensor from Your Prompt... ====")
 
 token_to_id, id_to_token = begin
     vocab = JSON.parsefile("$(ARGS[1])/vocab.json")
@@ -105,11 +113,9 @@ negative_prompt_embedding = get_prompt_embedding(negative_ids, model)
 c = cat(positive_prompt_embedding, negative_prompt_embedding, dims = 3)
 ;
 
-start_time = time_ns()
-
 include("decoder_.jl")
 
 generate_image(c, ARGS[1], ARGS[2])
 
-println("time taken: $((time_ns() - start_time) * 1e-9)")
+println("time taken: $((time_ns() - start_time) * 1e-9) s")
 

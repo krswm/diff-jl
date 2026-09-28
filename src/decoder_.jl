@@ -576,7 +576,6 @@ function diffuse(c, fmodel)
 end
 
 function generate_ppm_image(x, filename)
-    println(size(x))
     num_x, num_y, num_rgb, num_n = size(x)
     @assert num_rgb == 3
     @assert num_n == 1
@@ -590,6 +589,9 @@ function generate_ppm_image(x, filename)
 end
 
 function generate_image(c, model_path, output_path)
+    println("==== U-Net: Diffusion Process ====")
+    println("\"t = 0\" is the last one.")
+    
     fmodel = begin
         tensors = load_safetensors("$model_path/model.safetensors")
         get_fmodel(tensors)
@@ -607,5 +609,8 @@ function generate_image(c, model_path, output_path)
     x = clamp.(floor.((x .+ 1) * 128), UInt8)  # [x, y, rgb, n]
 
     generate_ppm_image(x, output_path)
+
+    println("==== Process Finished ====")
+    println("AI-Generated image saved at $output_path (PPM image format)")
 end
 
