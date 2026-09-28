@@ -28,7 +28,7 @@ cd diff-jl
 
 ```
 mkdir model
-curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/reslove/main/v1-5-pruned.safetensors --output model/model.safetensors
+curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/v1-5-pruned.safetensors --output model/model.safetensors
 curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/tokenizer/vocab.json --output model/vocab.json
 curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/tokenizer/merges.txt --output model/merges.txt
 curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/text_encoder/config.json --output model/config.json
