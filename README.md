@@ -1,8 +1,8 @@
-# Stable Diffusion Inference with Julia
+# Stable Diffusion v1-5 Inference with Julia
 
-I built an inference engine for Stable Diffusion from scratch in Julia.
+I built an inference engine for Stable Diffusion v1-5 from scratch in Julia.
 
-Stable Diffusion is a machine learning model that is trained to generate images from text.
+Stable Diffusion v1-5 is a machine learning model that is trained to generate images from text.
 
 ![Demo](https://raw.githubusercontent.com/krswm/asset/main/diff-jl/output.png)
 
@@ -10,7 +10,7 @@ Figure: An image the engine generated with prompt “a cat with a hat”
 
 I also built:
 
-- [An inference engine for Stable Diffusion in Rust](https://github.com/krswm/diff-rs)
+- [An inference engine for Stable Diffusion v1-5 in Rust](https://github.com/krswm/diff-rs)
 - [An inference engine for GPT-2 in Julia](https://github.com/krswm/slope-jl)
 - [An inference engine for GPT-2 in Rust](https://github.com/krswm/slope-rs)
 
@@ -24,15 +24,15 @@ It is assumed that you have Git, cURL, and Julia installed on your machine.
 **Clone this repository.**
 
 ```
-git clone https://github.com/krswm/diff-jl
+git clone https://github.com/krswm/diff-jl.git
 cd diff-jl
 ```
 
-**Download [the pre-trained Stable Diffusion model](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) from Hugging Face.**
+**Download [the pre-trained Stable Diffusion v1-5 model](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) from Hugging Face.**
 
 ```
 mkdir model
-curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/v1-5-pruned.safetensors --output model/model.safetensors
+curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors --output model/model.safetensors
 curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/tokenizer/vocab.json --output model/vocab.json
 curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/tokenizer/merges.txt --output model/merges.txt
 curl --location https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/text_encoder/config.json --output model/config.json
@@ -81,7 +81,7 @@ magick output.ppm output.png
 
 I was interested in the diffusion models because of their application in science.
 So, I decided to implement an inference engine of a diffusion model from scratch.
-Although its application is not for science, I targeted Stable Diffusion because:
+Although its application is not for science, I targeted Stable Diffusion v1-5 because:
 
 - The model weight was openly available.
 - I could find many technical information of it online.
@@ -95,5 +95,5 @@ I am looking forward to implement something scientific based on this project in 
 This is a hobby project of mine I started from scratch.
 I enjoyed a lot by working on this project!
 
-I used the model weight of Stable Diffusion and a reference implementation (*Stable Diffusion implemented from scratch in PyTorch*) only for the purpose to observe their behavior as diffusion model architecture.
+I used the model weight of Stable Diffusion v1-5 and a reference implementation (*Stable Diffusion implemented from scratch in PyTorch*) only for the purpose to observe their behavior as diffusion model architecture.
 Except for that, I did **not** use generative AI for this project at all.
